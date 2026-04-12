@@ -1,0 +1,83 @@
+from typing import Dict, Set, Any
+from src.engine.resources.model_loader import ModelLoader
+from src.engine.resources.texture_loader import TextureLoader
+from src.app.exceptions import ResourceError
+
+# Import centralized paths
+from src.app.config import SHADERS_DIR
+
+class ResourceManager:
+    """
+    Centralized cache system for runtime assets to prevent redundant memory allocation 
+    and disk I/O operations.
+    """
+    
+    _models: Dict[str, Any] = {}
+    _textures: Dict[str, int] = {}
+    _shaders: Dict[str, Any] = {} 
+    
+    # Track assets associated with the currently open project
+    project_models: Set[str] = set()
+    project_textures: Set[str] = set()
+
+    @staticmethod
+    def get_shader(name: str) -> Any:
+        """Retrieves a cached shader program, compiling defaults upon first request."""
+        if not ResourceManager._shaders:
+            from src.engine.graphics.shader import Shader
+            try:
+                # Use centralized SHADERS_DIR from config instead of hardcoded strings
+                ResourceManager._shaders = {
+                    "mat_standard": Shader(str(SHADERS_DIR / "materials" / "mat_standard.vert"), str(SHADERS_DIR / "materials" / "mat_standard.frag")),
+                    "mat_unlit": Shader(str(SHADERS_DIR / "materials" / "mat_unlit.vert"), str(SHADERS_DIR / "materials" / "mat_unlit.frag")),
+                    "pass_depth": Shader(str(SHADERS_DIR / "passes" / "pass_depth.vert"), str(SHADERS_DIR / "passes" / "pass_depth.frag")),
+                    "pass_picking": Shader(str(SHADERS_DIR / "passes" / "pass_picking.vert"), str(SHADERS_DIR / "passes" / "pass_picking.frag")),
+                    "editor_solid": Shader(str(SHADERS_DIR / "editor" / "editor_solid.vert"), str(SHADERS_DIR / "editor" / "editor_solid.frag")),
+                    "editor_proxy": Shader(str(SHADERS_DIR / "editor" / "editor_proxy.vert"), str(SHADERS_DIR / "editor" / "editor_proxy.frag"))
+                }
+                
+            except Exception as e:
+                # Catch compilation or missing file errors and escalate safely to the UI
+                raise ResourceError(f"Failed to initialize core shader programs.\nDetails: {e}")
+        
+        if name not in ResourceManager._shaders: 
+            raise ResourceError(f"Shader program not registered in cache: '{name}'")
+            
+        return ResourceManager._shaders[name]
+    
+    @classmethod
+    def add_project_model(cls, path: str) -> None:
+        """Registers a model path to the active project manifest."""
+        cls.project_models.add(path)
+
+    @classmethod
+    def add_project_texture(cls, path: str) -> None:
+        """Registers a texture path to the active project manifest."""
+        cls.project_textures.add(path)
+        
+    @classmethod
+    def clear_project_assets(cls) -> None:
+        """
+        Clears the project manifest. Note: This does not flush VRAM/RAM caches, 
+        allowing rapid reloading of recently used assets across scenes.
+        """
+        cls.project_models.clear()
+        cls.project_textures.clear()
+
+    @staticmethod
+    def get_model(filepath: str) -> Any:
+        """Retrieves a 3D model from the cache or dispatches a load request to ModelLoader."""
+        if filepath not in ResourceManager._models:
+            ResourceManager._models[filepath] = ModelLoader.load(filepath)
+        return ResourceManager._models[filepath]
+
+    @staticmethod
+    def load_texture(filepath: str) -> int:
+        """Retrieves a texture ID from the VRAM cache or dispatches a load request."""
+        if filepath not in ResourceManager._textures:
+            tex_id = TextureLoader.load(filepath)
+            
+            ResourceManager._textures[filepath] = tex_id
+            ResourceManager.add_project_texture(filepath)
+                
+        return ResourceManager._textures.get(filepath, 0)

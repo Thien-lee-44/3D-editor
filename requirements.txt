@@ -1,0 +1,11 @@
+# GUI Framework
+PySide6>=6.0.0
+
+# Graphics & Math
+PyOpenGL>=3.1.5
+PyGLM>=2.7.0
+numpy>=1.21.0
+
+# Asset Loading
+Pillow>=9.0.0      # For Texture loading
+plyfile>=0.7.4     # For PLY model parsing

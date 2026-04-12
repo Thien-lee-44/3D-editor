@@ -1,0 +1,9 @@
+# Ignore all project JSON files inside projects folder
+projects/*.json
+
+# Ignore Python cache files
+__pycache__/
+*/__pycache__/
+
+# Ignore generated script
+assets/models/gen.py
