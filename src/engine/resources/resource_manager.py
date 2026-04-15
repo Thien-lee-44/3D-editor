@@ -1,3 +1,4 @@
+import json
 from typing import Dict, Set, Any
 from src.engine.resources.model_loader import ModelLoader
 from src.engine.resources.texture_loader import TextureLoader
@@ -81,3 +82,19 @@ class ResourceManager:
             ResourceManager.add_project_texture(filepath)
                 
         return ResourceManager._textures.get(filepath, 0)
+    
+    @staticmethod
+    def save_project_file(file_path: str, data: Dict[str, Any]) -> None:
+        try:
+            with open(file_path, 'w', encoding='utf-8') as f:
+                json.dump(data, f, indent=4, ensure_ascii=False)
+        except Exception as e:
+            raise ResourceError(f"Failed to save project file to '{file_path}'.\nReason: {e}")
+
+    @staticmethod
+    def load_project_file(file_path: str) -> Dict[str, Any]:
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception as e:
+            raise ResourceError(f"Failed to load project file from '{file_path}'.\nReason: {e}")

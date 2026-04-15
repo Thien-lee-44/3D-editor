@@ -1,6 +1,6 @@
 import os
 import glm
-from typing import Any, Optional
+from typing import Any, Optional, Dict, List
 from src.engine.scene.entity import Entity
 from src.engine.scene.components import TransformComponent, MeshRenderer, LightComponent, CameraComponent
 from src.engine.geometry.primitives import PrimitivesManager
@@ -8,7 +8,7 @@ from src.engine.resources.resource_manager import ResourceManager
 from src.engine.graphics.buffer_objects import BufferObject
 
 from src.engine.scene.components.animation_cmp import AnimationComponent
-from src.engine.scene.components.semantic_cmp import SemanticComponent  # [NEW] Import Semantic
+from src.engine.scene.components.semantic_cmp import SemanticComponent
 from src.engine.synthetic.tracking_mgr import TrackingManager
 
 from src.app.exceptions import SimulationError, ResourceError
@@ -45,7 +45,7 @@ class EntityFactory:
         ent.add_component(TransformComponent())
         
         self._attach_animation(ent)
-        self._attach_semantic(ent, class_id=3) # Default to Misc (3)
+        self._attach_semantic(ent, class_id=3) 
         
         self.scene.add_entity(ent)
 
@@ -58,7 +58,7 @@ class EntityFactory:
             ent.add_component(TransformComponent())
             
             self._attach_animation(ent)
-            self._attach_semantic(ent, class_id=3) # Default to Misc (3)
+            self._attach_semantic(ent, class_id=3) 
             
             renderer = ent.add_component(MeshRenderer())
             renderer.geometry = geom
@@ -76,7 +76,7 @@ class EntityFactory:
         ent.add_component(TransformComponent())
         
         self._attach_animation(ent)
-        self._attach_semantic(ent, class_id=3) # Default to Misc (3)
+        self._attach_semantic(ent, class_id=3) 
         
         renderer = ent.add_component(MeshRenderer())
         geom = MathSurface(formula, (xmin, xmax), (ymin, ymax), res)
@@ -96,8 +96,7 @@ class EntityFactory:
         ent = Entity(f"{light_type} Light")
         tf = ent.add_component(TransformComponent())
         
-        self._attach_animation(ent) # Lights can move/blink
-        # NO _attach_semantic -> Lights won't appear in YOLO datasets
+        self._attach_animation(ent) 
         
         light_comp = ent.add_component(LightComponent(light_type=light_type))
         light_comp.on = global_light_on
@@ -121,8 +120,7 @@ class EntityFactory:
         ent = Entity("Camera")
         tf = ent.add_component(TransformComponent())
         
-        self._attach_animation(ent) # Cameras can fly/pan
-        # NO _attach_semantic -> Cameras won't appear in YOLO datasets
+        self._attach_animation(ent) 
         
         cam = ent.add_component(CameraComponent(mode="Perspective"))
         cam.is_active = not any(e.get_component(CameraComponent) for e in self.scene.entities)
@@ -136,58 +134,101 @@ class EntityFactory:
         self.scene.add_entity(ent)
 
     def spawn_model_from_path(self, path: str) -> None:
-        """Parses a 3D asset file and translates its sub-meshes into ECS entities."""
+        """
+        Parses a 3D asset and assembles a hierarchical structure.
+        Automatically calculates the group center to align Gizmos with the collective children.
+        """
         try:
             mesh_data_list = ResourceManager.get_model(path)
             raw_name = os.path.splitext(os.path.basename(path))[0]
             display_name = raw_name.replace('_', ' ').title()
 
-            if len(mesh_data_list) > 1:
-                parent_ent = Entity(display_name, is_group=True)
-                parent_ent.add_component(TransformComponent())
+            # 1. Bucket meshes and track global bounds for the Master Group
+            buckets: Dict[str, List[Any]] = {}
+            all_child_positions = []
+
+            for sub_data in mesh_data_list:
+                g_name = getattr(sub_data, 'group_name', display_name)
+                if g_name not in buckets:
+                    buckets[g_name] = []
+                buckets[g_name].append(sub_data)
+                if hasattr(sub_data, 'pivot_offset'):
+                    all_child_positions.append(glm.vec3(*sub_data.pivot_offset))
+
+            # Calculate Master Group Center
+            master_center = glm.vec3(0.0)
+            if all_child_positions:
+                min_p = glm.vec3(min(p.x for p in all_child_positions), min(p.y for p in all_child_positions), min(p.z for p in all_child_positions))
+                max_p = glm.vec3(max(p.x for p in all_child_positions), max(p.y for p in all_child_positions), max(p.z for p in all_child_positions))
+                master_center = (min_p + max_p) / 2.0
+
+            # 2. Create Master Parent at the calculated center
+            master_ent = Entity(display_name, is_group=True)
+            master_tf = master_ent.add_component(TransformComponent())
+            master_tf.position = master_center # Move group gizmo to objects center
+            
+            self._attach_animation(master_ent)
+            master_track_id = self._attach_semantic(master_ent, class_id=0)
+            self.scene.add_entity(master_ent)
+
+            # 3. Process each object bucket
+            for g_name, meshes in buckets.items():
+                # Determine this object's world center
+                obj_world_positions = [glm.vec3(*m.pivot_offset) for m in meshes if hasattr(m, 'pivot_offset')]
+                if not obj_world_positions: continue
                 
-                self._attach_animation(parent_ent)
-                group_track_id = self._attach_semantic(parent_ent, class_id=0) # Default to Car (0)
+                obj_world_center = sum(obj_world_positions, glm.vec3(0.0)) / len(obj_world_positions)
                 
-                self.scene.add_entity(parent_ent)
+                # Create the object entity (Group or Single Mesh)
+                is_multi_part = len(meshes) > 1
+                obj_ent = Entity(g_name, is_group=is_multi_part)
                 
-                for sub_data in mesh_data_list:
-                    child_ent = Entity(getattr(sub_data, 'name', 'SubMesh'))
-                    child_ent.add_component(TransformComponent())
-                    
-                    self._attach_animation(child_ent)
-                    self._attach_semantic(child_ent, class_id=0, track_id=group_track_id)
-                    
-                    renderer = child_ent.add_component(MeshRenderer())
-                    renderer.geometry = BufferObject(sub_data.vertices, sub_data.indices, vertex_size=sub_data.vertex_size)
-                    renderer.geometry.filepath = path
-                    renderer.geometry.name = getattr(sub_data, 'name', '')
-                    
-                    if hasattr(sub_data, 'materials') and 'default_active' in sub_data.materials:
-                        renderer.material.setup_from_dict(sub_data.materials['default_active'])
-                            
-                    parent_ent.add_child(child_ent, keep_world=False)
-                    self.scene.add_entity(child_ent)
-                    
-                self.scene.selected_index = self.scene.entities.index(parent_ent)
-            else:
-                ent = Entity(display_name)
-                ent.add_component(TransformComponent())
+                # Set position relative to Master Parent
+                obj_tf = obj_ent.add_component(TransformComponent())
+                obj_tf.position = obj_world_center - master_center
                 
-                self._attach_animation(ent)
-                self._attach_semantic(ent, class_id=0)
+                self._attach_animation(obj_ent)
+                obj_track_id = self._attach_semantic(obj_ent, class_id=0, track_id=master_track_id)
                 
-                renderer = ent.add_component(MeshRenderer())
-                sub_data = mesh_data_list[0]
-                
-                renderer.geometry = BufferObject(sub_data.vertices, sub_data.indices, vertex_size=sub_data.vertex_size)
-                renderer.geometry.filepath = path
-                renderer.geometry.name = getattr(sub_data, 'name', '')
-                
-                if hasattr(sub_data, 'materials') and 'default_active' in sub_data.materials:
-                    renderer.material.setup_from_dict(sub_data.materials['default_active'])
+                master_ent.add_child(obj_ent, keep_world=False)
+                self.scene.add_entity(obj_ent)
+
+                # 4. Attach meshes as children of the object
+                for sub_data in meshes:
+                    if is_multi_part:
+                        child_ent = Entity(getattr(sub_data, 'name', 'SubMesh'))
+                        child_tf = child_ent.add_component(TransformComponent())
+                        child_tf.position = glm.vec3(*sub_data.pivot_offset) - obj_world_center
                         
-                self.scene.add_entity(ent)
-                
+                        self._attach_animation(child_ent)
+                        self._attach_semantic(child_ent, class_id=0, track_id=obj_track_id)
+                        
+                        renderer = child_ent.add_component(MeshRenderer())
+                        renderer.geometry = BufferObject(sub_data.vertices, sub_data.indices, vertex_size=sub_data.vertex_size)
+                        renderer.geometry.pivot_offset = sub_data.pivot_offset
+                        
+                        renderer.geometry.filepath = path
+                        renderer.geometry.name = getattr(sub_data, 'name', '')
+                        renderer.geometry.render_mode = getattr(sub_data, 'render_mode', 0x0004)
+                        
+                        if hasattr(sub_data, 'materials') and 'default_active' in sub_data.materials:
+                            renderer.material.setup_from_dict(sub_data.materials['default_active'])
+                                
+                        obj_ent.add_child(child_ent, keep_world=False)
+                        self.scene.add_entity(child_ent)
+                    else:
+                        renderer = obj_ent.add_component(MeshRenderer())
+                        renderer.geometry = BufferObject(sub_data.vertices, sub_data.indices, vertex_size=sub_data.vertex_size)
+                        renderer.geometry.pivot_offset = sub_data.pivot_offset
+                        
+                        renderer.geometry.filepath = path
+                        renderer.geometry.name = getattr(sub_data, 'name', '')
+                        renderer.geometry.render_mode = getattr(sub_data, 'render_mode', 0x0004)
+                        
+                        if hasattr(sub_data, 'materials') and 'default_active' in sub_data.materials:
+                            renderer.material.setup_from_dict(sub_data.materials['default_active'])
+
+            self.scene.selected_index = self.scene.entities.index(master_ent)
+            
         except Exception as e:
             raise ResourceError(f"Failed to instantiate model hierarchy from '{path}'.\nReason: {e}")

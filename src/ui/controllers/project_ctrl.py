@@ -83,12 +83,12 @@ class ProjectController:
         if hasattr(ctx, 'main_window') and hasattr(ctx.main_window, 'gl_widget'):
             ctx.main_window.gl_widget.makeCurrent()
             ctx.engine.clear_scene()
-            ctx.engine.auto_load_default_assets(config.DEFAULT_TEXTURE_DIR)
+            ctx.engine.auto_load_default_assets(config.TEXTURES_DIR)
             ctx.main_window.gl_widget.bg_color = config.DEFAULT_BG_COLOR 
             ctx.main_window.gl_widget.doneCurrent()
         else:
             ctx.engine.clear_scene()
-            ctx.engine.auto_load_default_assets(config.DEFAULT_TEXTURE_DIR)
+            ctx.engine.auto_load_default_assets(config.TEXTURES_DIR)
         
         self.undo_stack.clear()
         self.redo_stack.clear()

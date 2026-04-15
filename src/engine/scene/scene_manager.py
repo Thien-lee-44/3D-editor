@@ -2,7 +2,6 @@ import os
 import math
 import json
 import copy
-import shutil
 import random
 import numpy as np
 import glm
@@ -247,11 +246,6 @@ class SceneManager:
         else: 
             setattr(comp, prop, glm.vec3(*value) if isinstance(value, list) and len(value) == 3 else value)
 
-        # =====================================================================
-        # INDEX-BASED AUTO-KEYING SYSTEM
-        # Modifying properties while a specific keyframe is explicitly selected
-        # will silently overwrite that keyframe regardless of current playhead time.
-        # =====================================================================
         anim = ent.get_component(AnimationComponent)
         if anim and hasattr(anim, 'active_keyframe_index') and anim.active_keyframe_index >= 0:
             if anim.active_keyframe_index < len(anim.keyframes):
@@ -270,8 +264,6 @@ class SceneManager:
     def _handle_animation_property(self, ent: Entity, comp: AnimationComponent, prop: str, value: Any) -> None:
         if prop == "ADD_KEYFRAME":
             target_time = float(value)
-            
-            # Find existing keyframe within a small epsilon tolerance
             existing_kf = None
             for kf in comp.keyframes:
                 if abs(kf.time - target_time) < 0.01:
@@ -297,7 +289,6 @@ class SceneManager:
             if not existing_kf:
                 comp.add_keyframe(kf_to_modify)
             elif hasattr(comp, '_sort_and_update_duration'):
-                # Force internal duration re-calculation just in case
                 comp._sort_and_update_duration()
             
         elif prop == "REMOVE_KEYFRAME":
@@ -331,6 +322,83 @@ class SceneManager:
     # =========================================================================
     # HIERARCHY & CLIPBOARD OPERATIONS
     # =========================================================================
+
+    def group_selected_entities(self, entity_ids: List[int]) -> None:
+        """
+        Creates a new Group Entity precisely at the geometric center of the selected items.
+        Reparents the selected items and adjusts their local transforms to prevent visual displacement.
+        """
+        if len(entity_ids) < 2:
+            return
+            
+        valid_ents = [self.scene.entities[i] for i in entity_ids if 0 <= i < len(self.scene.entities)]
+        
+        # Filter out children whose parents are also in the selection to prevent circular logic
+        top_level_ents = [e for e in valid_ents if e.parent not in valid_ents]
+        if not top_level_ents: 
+            return
+
+        # 1. Calculate World Centroid
+        centroid = glm.vec3(0.0)
+        count = 0
+        for ent in top_level_ents:
+            tf = ent.get_component(TransformComponent)
+            if tf:
+                mat = tf.get_matrix()
+                centroid += glm.vec3(mat[3][0], mat[3][1], mat[3][2])
+                count += 1
+                
+        if count > 0:
+            centroid /= count
+
+        # 2. Instantiate Group Entity
+        group_ent = Entity("Group", is_group=True)
+        group_tf = group_ent.add_component(TransformComponent())
+        group_tf.position = centroid
+        
+        group_ent.add_component(AnimationComponent())
+        group_ent.add_component(SemanticComponent(track_id=TrackingManager.get_next_id(), class_id=3))
+        
+        # Keep the group at the same hierarchy level as the first selected item
+        common_parent = top_level_ents[0].parent
+        self.scene.add_entity(group_ent)
+        
+        if common_parent:
+            common_parent.add_child(group_ent, keep_world=True)
+            
+        # 3. Reparent target entities into the new group
+        for ent in top_level_ents:
+            if ent.parent:
+                ent.parent.remove_child(ent, keep_world=True)
+            group_ent.add_child(ent, keep_world=True)
+            
+        self.scene.selected_index = self.scene.entities.index(group_ent)
+
+    def ungroup_selected_entity(self) -> None:
+        """
+        Dissolves the currently selected Group Entity.
+        Elevates its children to the parent's level and preserves their world transforms.
+        """
+        idx = self.scene.selected_index
+        if idx < 0 or idx >= len(self.scene.entities): 
+            return
+            
+        group_ent = self.scene.entities[idx]
+        
+        # Only process actual groups
+        if not group_ent.is_group:
+            return
+            
+        parent_ent = group_ent.parent
+        children_snapshot = list(group_ent.children)
+        
+        for child in children_snapshot:
+            group_ent.remove_child(child, keep_world=True)
+            if parent_ent:
+                parent_ent.add_child(child, keep_world=True)
+                
+        # Optional: Delete the group container once emptied
+        self.scene.remove_entity(idx)
 
     def copy_selected(self) -> None:
         if self.scene.selected_index >= 0: 
@@ -456,7 +524,7 @@ class SceneManager:
                 return True
         return False
 
-    # =========================================================================
+   # =========================================================================
     # SERIALIZATION & EXPORT
     # =========================================================================
 
@@ -486,13 +554,10 @@ class SceneManager:
             },
             "entities": [self._serialize_entity(ent) for ent in self.scene.entities if ent.parent is None]
         }
-
-        with open(file_path, 'w', encoding='utf-8') as f: 
-            json.dump(data, f, indent=4, ensure_ascii=False)
+        ResourceManager.save_project_file(file_path, data)
 
     def load_project(self, file_path: str, current_aspect: float) -> Dict[str, Any]:
-        with open(file_path, 'r', encoding='utf-8') as f: 
-            data = json.load(f)
+        data = ResourceManager.load_project_file(file_path)
 
         self.scene.entities.clear()
         self.scene.selected_index = -1
@@ -523,6 +588,11 @@ class SceneManager:
             self._add_entity_recursive(ent)
             
         return data.get("metadata", {})
+
+    def export_scene_obj(self, export_dir: str) -> None:
+        from src.engine.resources.exporter import OBJExporter
+        top_level_entities = [ent for ent in self.scene.entities if ent.parent is None]
+        OBJExporter.export(top_level_entities, export_dir)
 
     def _serialize_entity(self, ent: Entity) -> Dict[str, Any]:
         data = {"name": ent.name, "is_group": ent.is_group, "components": {}, "children": []}
@@ -589,92 +659,3 @@ class SceneManager:
             ent.add_child(child_ent, keep_world=False)
             
         return ent
-
-    def export_scene_obj(self, export_dir: str) -> None:
-        obj_path = os.path.join(export_dir, "models.obj")
-        mtl_path = os.path.join(export_dir, "materials.mtl")
-        tex_folder_name = "textures" 
-        tex_dir_full = os.path.join(export_dir, tex_folder_name)
-        
-        with open(obj_path, 'w', encoding='utf-8') as f_obj, open(mtl_path, 'w', encoding='utf-8') as f_mtl:
-            f_obj.write("mtllib materials.mtl\n")
-            export_state = {'v_offset': 1, 'mat_count': 0}
-            
-            try:
-                for ent in self.scene.entities:
-                    if ent.parent is None:
-                        self._export_entity_to_obj(ent, f_obj, f_mtl, tex_dir_full, tex_folder_name, export_state)
-            except Exception as e:
-                raise ResourceError(f"Failed to export scene geometry to '{export_dir}'.\nReason: {e}")
-
-    def _export_entity_to_obj(self, ent: Entity, f_obj: Any, f_mtl: Any, tex_dir_full: str, tex_folder_name: str, state: Dict[str, int]) -> None:
-        mesh = ent.get_component(MeshRenderer)
-        tf = ent.get_component(TransformComponent)
-        
-        if mesh and mesh.visible and not getattr(mesh, 'is_proxy', False) and mesh.geometry:
-            mat_name = f"mat_{state['mat_count']}_{ent.name.replace(' ', '_')}"
-            state['mat_count'] += 1
-            mat = mesh.material
-            
-            f_mtl.write(f"newmtl {mat_name}\n")
-            f_mtl.write(f"Ka {mat._ambient.x:.4f} {mat._ambient.y:.4f} {mat._ambient.z:.4f}\n")
-            f_mtl.write(f"Kd {mat._diffuse.x:.4f} {mat._diffuse.y:.4f} {mat._diffuse.z:.4f}\n")
-            f_mtl.write(f"Ks {mat._specular.x:.4f} {mat._specular.y:.4f} {mat._specular.z:.4f}\n")
-            f_mtl.write(f"Ns {getattr(mat, 'shininess', 32.0):.4f}\n")
-            
-            tex_paths_dict = getattr(mat, 'tex_paths', {})
-            for map_attr, t_path in tex_paths_dict.items():
-                if t_path and os.path.exists(t_path):
-                    tex_name = os.path.basename(t_path)
-                    if not os.path.exists(tex_dir_full): 
-                        os.makedirs(tex_dir_full)
-                    dest_tex = os.path.join(tex_dir_full, tex_name)
-                    try:
-                        if not os.path.exists(dest_tex) or not os.path.samefile(t_path, dest_tex): 
-                            shutil.copy2(t_path, dest_tex)
-                        token = MTL_TOKENS.get(map_attr, "map_Kd")
-                        f_mtl.write(f"{token} {tex_folder_name}/{tex_name}\n")
-                    except Exception as e:
-                        raise ResourceError(f"Texture packaging failed during export: {e}")
-            f_mtl.write("\n")
-            f_obj.write(f"o {ent.name.replace(' ', '_')}\n")
-            f_obj.write(f"usemtl {mat_name}\n")
-            
-            geom = mesh.geometry
-            if not hasattr(geom, 'vertices') or not hasattr(geom, 'vertex_size'): 
-                return
-                
-            v_size = geom.vertex_size
-            verts = np.array(geom.vertices, dtype=np.float32).reshape(-1, v_size)
-            num_v = len(verts)
-            global_mat = tf.get_matrix() if tf else glm.mat4(1.0)
-            norm_mat = glm.transpose(glm.inverse(glm.mat3(global_mat)))
-            
-            for i in range(num_v):
-                pos = glm.vec3(verts[i][0], verts[i][1], verts[i][2])
-                g_pos = glm.vec3(global_mat * glm.vec4(pos, 1.0))
-                f_obj.write(f"v {g_pos.x:.6f} {g_pos.y:.6f} {g_pos.z:.6f}\n")
-                
-            for i in range(num_v): 
-                f_obj.write(f"vt {verts[i][6]:.6f} {verts[i][7]:.6f}\n")
-                
-            for i in range(num_v):
-                norm = glm.vec3(verts[i][3], verts[i][4], verts[i][5])
-                g_norm = glm.normalize(norm_mat * norm) if glm.length(norm) > 0 else glm.vec3(0, 1, 0)
-                f_obj.write(f"vn {g_norm.x:.6f} {g_norm.y:.6f} {g_norm.z:.6f}\n")
-                
-            if getattr(geom, 'indices', None) is not None and len(geom.indices) > 0:
-                idx = geom.indices
-                v_off = state['v_offset']
-                for i in range(0, len(idx), 3):
-                    i1, i2, i3 = idx[i], idx[i+1], idx[i+2]
-                    f_obj.write(f"f {i1+v_off}/{i1+v_off}/{i1+v_off} {i2+v_off}/{i2+v_off}/{i2+v_off} {i3+v_off}/{i3+v_off}/{i3+v_off}\n")
-            else:
-                v_off = state['v_offset']
-                for i in range(num_v): 
-                    f_obj.write(f"p {i+v_off}\n")
-                    
-            state['v_offset'] += num_v
-            
-        for child in ent.children:
-            self._export_entity_to_obj(child, f_obj, f_mtl, tex_dir_full, tex_folder_name, state)

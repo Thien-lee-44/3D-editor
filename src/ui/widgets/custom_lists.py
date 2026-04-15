@@ -1,7 +1,7 @@
 from PySide6.QtWidgets import (QListWidget, QListWidgetItem, QMenu, QMessageBox,
                                QTreeWidget, QTreeWidgetItem, QAbstractItemView)
 from PySide6.QtCore import Qt, QMimeData, QSize, QPoint
-from PySide6.QtGui import QDropEvent
+from PySide6.QtGui import QDropEvent, QMouseEvent
 from typing import Any, List, Dict, Optional
 import os
 
@@ -25,7 +25,6 @@ class AssetListWidget(QListWidget):
         self.setDefaultDropAction(Qt.CopyAction)
         self.setSelectionMode(QListWidget.SingleSelection)
         
-        # Larger display format for Texture images
         if asset_type == 'TEXTURE':
             self.setIconSize(QSize(ASSET_ICON_SIZE, ASSET_ICON_SIZE))
             self.setSpacing(ASSET_LIST_SPACING)
@@ -69,30 +68,41 @@ class AssetListWidget(QListWidget):
 
 class EntityTreeWidget(QTreeWidget):
     """
-    Custom QTreeWidget supporting internal Drag-and-Drop tree reordering.
-    Evaluates the new Parent-Child relationships and dispatches the mapping to the Controller.
+    Custom QTreeWidget supporting internal Drag-and-Drop tree reordering
+    and Extended Selection for multi-entity grouping operations.
     """
     def __init__(self, controller: Any) -> None:
         super().__init__()
         self._controller = controller 
         
         self.setHeaderHidden(True)
-        self.setSelectionMode(QAbstractItemView.SingleSelection)
         
-        # Enable Qt's internal Drag-and-Drop mechanics
+        self.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        
         self.setDragEnabled(True)
         self.setAcceptDrops(True)
         self.setDropIndicatorShown(True)
         self.setDragDropMode(QAbstractItemView.InternalMove)
 
+    def mousePressEvent(self, event: QMouseEvent) -> None:
+        """
+        Intercepts mouse clicks to bypass Qt's aggressive InternalMove drag initiation 
+        when modifier keys are held. This ensures Ctrl/Shift multi-selection functions natively.
+        """
+        modifiers = event.modifiers()
+        if modifiers & (Qt.ControlModifier | Qt.ShiftModifier):
+            self.setDragDropMode(QAbstractItemView.NoDragDrop)
+            super().mousePressEvent(event)
+            self.setDragDropMode(QAbstractItemView.InternalMove)
+        else:
+            super().mousePressEvent(event)
+
     def dropEvent(self, event: QDropEvent) -> None:
         """Overrides the Drop event to synchronize the visual tree changes with the underlying ECS."""
-        # 1. Allow Qt to physically move the item within the UI tree
         super().dropEvent(event)
         
         hierarchy_mapping: Dict[int, Optional[int]] = {}
         
-        # 2. Recursively traverse the UI to map relationships (Entity ID -> Parent ID)
         def traverse(item: QTreeWidgetItem, parent_id: Optional[int]) -> None:
             ent_id = item.data(0, Qt.UserRole)
             if ent_id is not None:
@@ -103,6 +113,5 @@ class EntityTreeWidget(QTreeWidget):
         for i in range(self.topLevelItemCount()):
             traverse(self.topLevelItem(i), None)
             
-        # 3. Dispatch the comprehensive mapping array to the Controller
-        if self._controller:
+        if self._controller and hasattr(self._controller, 'handle_hierarchy_reorder'):
             self._controller.handle_hierarchy_reorder(hierarchy_mapping)

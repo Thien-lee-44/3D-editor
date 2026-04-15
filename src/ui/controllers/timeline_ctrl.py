@@ -111,6 +111,19 @@ class TimelineController:
 
     def advance_time(self, dt: float) -> None:
         if not self.is_playing:
+            # =================================================================
+            # [CRITICAL FIX]: VIEWPORT AUTO-KEYING SYNCHRONIZATION
+            # Even when playback is paused, if an entity is in Edit Mode 
+            # (a keyframe is selected), we must explicitly wake up the Animator 
+            # so it can poll and bake real-time Viewport Gizmo manipulations.
+            # =================================================================
+            ent_id = ctx.engine.get_selected_entity_id()
+            if ent_id >= 0:
+                ent = ctx.engine.scene.entities[ent_id]
+                anim = ent.get_component(AnimationComponent)
+                if anim and hasattr(anim, 'active_keyframe_index') and anim.active_keyframe_index >= 0:
+                    if hasattr(ctx.engine, 'animator'):
+                        ctx.engine.animator.evaluate(self.current_time, 0.0)
             return
             
         self.current_time += dt

@@ -7,12 +7,12 @@ from OpenGL.GL import GL_TRIANGLES, GL_LINES, GL_POINTS
 
 from src.engine.graphics.buffer_objects import BufferObject
 from src.app.exceptions import ResourceError
-
 from src.app.config import MODELS_DIR
 
 class ModelLoader:
     """
     Parser for 3D geometry formats. Currently supports Wavefront (.obj) and Stanford (.ply) formats.
+    Includes advanced sub-mesh isolation and pivot baking to correct local coordinate spaces.
     """
     
     @staticmethod
@@ -42,10 +42,14 @@ class ModelLoader:
     def _load_obj_custom(filepath: str, normalize: bool) -> List[BufferObject]:
         parsed_mtl = ModelLoader._parse_materials(filepath)
         v_raw, vt_raw, vn_raw, vc_raw = [], [], [], []
-        submeshes = {}
-        curr_mat, curr_obj = 'default', os.path.basename(filepath)
-        unique_verts = {}
         
+        submeshes = {} 
+        
+        default_obj_name = os.path.splitext(os.path.basename(filepath))[0]
+        curr_obj = default_obj_name
+        curr_mat = 'default'
+        
+        unique_verts = {}
         vi_list, vti_list, vni_list = [], [], []
         idx_count = 0
 
@@ -66,8 +70,9 @@ class ModelLoader:
                             vc_app((float(parts[4]), float(parts[5]), float(parts[6])))
                     
                     elif cmd in ('f', 'l', 'p'):
-                        if curr_mat not in submeshes: 
-                            submeshes[curr_mat] = {'faces': [], 'lines': [], 'points': [], 'name': f"{curr_obj}_{curr_mat}"}
+                        key = (curr_obj, curr_mat)
+                        if key not in submeshes: 
+                            submeshes[key] = {'faces': [], 'lines': [], 'points': []}
                             
                         parsed_elements = []
                         lv, lvt, lvn = len(v_raw), len(vt_raw), len(vn_raw)
@@ -91,12 +96,12 @@ class ModelLoader:
                             
                         if cmd == 'f':
                             for i in range(1, len(parsed_elements) - 1):
-                                submeshes[curr_mat]['faces'].extend([parsed_elements[0], parsed_elements[i], parsed_elements[i+1]])
+                                submeshes[key]['faces'].extend([parsed_elements[0], parsed_elements[i], parsed_elements[i+1]])
                         elif cmd == 'l':
                             for i in range(len(parsed_elements) - 1):
-                                submeshes[curr_mat]['lines'].extend([parsed_elements[i], parsed_elements[i+1]])
+                                submeshes[key]['lines'].extend([parsed_elements[i], parsed_elements[i+1]])
                         elif cmd == 'p':
-                            submeshes[curr_mat]['points'].extend(parsed_elements)
+                            submeshes[key]['points'].extend(parsed_elements)
                                 
                     elif cmd == 'vt': 
                         vt_app((float(parts[1]), float(parts[2]))) 
@@ -104,10 +109,8 @@ class ModelLoader:
                         vn_app((float(parts[1]), float(parts[2]), float(parts[3])))
                     elif cmd == 'usemtl':
                         curr_mat = parts[1].strip(' "\'') if len(parts) > 1 else 'default'
-                        if curr_mat not in submeshes: 
-                            submeshes[curr_mat] = {'faces': [], 'lines': [], 'points': [], 'name': f"{curr_obj}_{curr_mat}"}
                     elif cmd in ('o', 'g'):
-                        curr_obj = parts[1].strip(' "\'') if len(parts) > 1 else 'object'
+                        curr_obj = parts[1].strip(' "\'') if len(parts) > 1 else f'object_{len(submeshes)}'
         except Exception as e:
             raise ResourceError(f"Failed to read or parse OBJ file '{filepath}'.\nReason: {e}")
         
@@ -149,7 +152,6 @@ class ModelLoader:
                     np.divide(normals, norms_len, out=normals, where=norms_len!=0)
 
         v_size = 11 if vc_raw else 8
-        
         if v_size == 11:
             vertex_data = np.hstack((positions, normals, uvs, colors)).astype(np.float32)
         else:
@@ -161,48 +163,56 @@ class ModelLoader:
         result = []
         vd_reshaped = vertex_data.reshape(-1, v_size)
         
-        for mat_name, d in submeshes.items():
+        obj_part_count = {}
+        for (o_name, m_name), d in submeshes.items():
+            active_types = sum(1 for k in ['faces', 'lines', 'points'] if d[k])
+            obj_part_count[o_name] = obj_part_count.get(o_name, 0) + active_types
+
+        for (obj_name, mat_name), d in submeshes.items():
+            idx_arrays = []
+            if d['faces']: idx_arrays.append(d['faces'])
+            if d['lines']: idx_arrays.append(d['lines'])
+            if d['points']: idx_arrays.append(d['points'])
+            if not idx_arrays: continue
+            
+            all_idx = np.concatenate(idx_arrays)
+            used_indices = np.unique(all_idx)
+            
+            local_vd = vd_reshaped[used_indices].copy()
+            sub_pos = local_vd[:, :3]
+            min_b, max_b = sub_pos.min(axis=0), sub_pos.max(axis=0)
+            center = (min_b + max_b) / 2.0
+            
+            local_vd[:, :3] -= center
+            
+            remap_arr = np.zeros(used_indices.max() + 1, dtype=np.uint32)
+            remap_arr[used_indices] = np.arange(len(used_indices), dtype=np.uint32)
+            
+            local_faces = remap_arr[d['faces']] if d['faces'] else None
+            local_lines = remap_arr[d['lines']] if d['lines'] else None
+            local_points = remap_arr[d['points']] if d['points'] else None
+
             mat_dict = parsed_mtl.get(mat_name, {'ambient': [1]*3, 'diffuse': [0.9]*3, 'specular': [0.2]*3, 'shininess': 32.0, 'texture': ""}).copy()
             if mat_dict.get('texture'): 
                 mat_dict['ambient'], mat_dict['diffuse'] = [1]*3, [1]*3
             
+            is_multi_part = obj_part_count[obj_name] > 1
+            base_name = f"{obj_name}_{mat_name}" if is_multi_part else obj_name
             active_types = sum(1 for k in ['faces', 'lines', 'points'] if d[k])
-            has_rendered = False
-            if d['faces']:
-                name = d['name'] + ("_Faces" if active_types > 1 else "")
-                geom = BufferObject(vertex_data.flatten(), np.array(d['faces'], dtype=np.uint32), v_size, render_mode=GL_TRIANGLES)
+            
+            def create_buffer(geom_data: np.ndarray, indices: Optional[np.ndarray], mode: int, suffix: str) -> None:
+                name = base_name + suffix if active_types > 1 else base_name
+                geom = BufferObject(geom_data.flatten(), indices, v_size, render_mode=mode)
                 geom.name = name
+                geom.group_name = obj_name  
                 geom.filepath = filepath
                 geom.materials = {'default_active': mat_dict}
+                geom.pivot_offset = center.tolist()
                 result.append(geom)
-                has_rendered = True
 
-            if d['lines']:
-                name = d['name'] + ("_Lines" if active_types > 1 else "")
-                geom = BufferObject(vertex_data.flatten(), np.array(d['lines'], dtype=np.uint32), v_size, render_mode=GL_LINES)
-                geom.name = name
-                geom.filepath = filepath
-                geom.materials = {'default_active': mat_dict}
-                result.append(geom)
-                has_rendered = True
-
-            if d['points']:
-                name = d['name'] + ("_Points" if active_types > 1 else "")
-                pt_data = vd_reshaped[d['points']]
-                geom = BufferObject(pt_data.flatten(), None, v_size, render_mode=GL_POINTS)
-                geom.name = name
-                geom.filepath = filepath
-                geom.materials = {'default_active': mat_dict}
-                result.append(geom)
-                has_rendered = True
-                
-            if not has_rendered:
-                name = d['name'] + "_RawPoints"
-                geom = BufferObject(vertex_data.flatten(), None, v_size, render_mode=GL_POINTS)
-                geom.name = name
-                geom.filepath = filepath
-                geom.materials = {'default_active': mat_dict}
-                result.append(geom)
+            if local_faces is not None: create_buffer(local_vd, local_faces, GL_TRIANGLES, "_Faces")
+            if local_lines is not None: create_buffer(local_vd, local_lines, GL_LINES, "_Lines")
+            if local_points is not None: create_buffer(local_vd, local_points, GL_POINTS, "_Points")
 
         return result
 
@@ -348,12 +358,18 @@ class ModelLoader:
         
         if normalize: 
             vertex_data = ModelLoader._normalize_vertices(vertex_data, v_size)
+            
+        min_b, max_b = vertex_data[:, :3].min(axis=0), vertex_data[:, :3].max(axis=0)
+        center = (min_b + max_b) / 2.0
+        vertex_data[:, :3] -= center
 
         idx_arr = np.array(indices, dtype=np.uint32) if indices else None
         
         geom = BufferObject(vertex_data.flatten(), idx_arr, v_size, render_mode=topology)
         geom.name = os.path.basename(filepath)
+        geom.group_name = geom.name
         geom.filepath = filepath
         geom.materials = {}
+        geom.pivot_offset = center.tolist()
         
         return [geom]

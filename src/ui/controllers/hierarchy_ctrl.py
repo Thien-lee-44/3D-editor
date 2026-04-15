@@ -1,4 +1,5 @@
 from PySide6.QtCore import QPoint
+from typing import List
 from src.app import ctx, AppEvent
 from src.ui.error_handler import safe_execute
 from src.ui.views.panels.hierarchy_view import HierarchyPanelView
@@ -7,6 +8,9 @@ class HierarchyController:
     """Manages the logic and state of the Scene Graph Hierarchy tree."""
     def __init__(self) -> None:
         self.view = HierarchyPanelView(controller=self)
+        
+        self.selected_multi_ids: List[int] = [] 
+        
         ctx.events.subscribe(AppEvent.HIERARCHY_NEEDS_REFRESH, self.refresh_view)
         ctx.events.subscribe(AppEvent.ENTITY_SELECTED, self.on_global_selection)
 
@@ -24,6 +28,10 @@ class HierarchyController:
         ctx.engine.select_entity(entity_id)
         ctx.events.emit(AppEvent.ENTITY_SELECTED, entity_id)
         ctx.events.emit(AppEvent.SCENE_CHANGED)
+
+    def handle_multi_selection(self, ids: List[int]) -> None:
+        """Caches the list of currently highlighted items for group/ungroup operations."""
+        self.selected_multi_ids = ids
 
     @safe_execute(context="Reorder Hierarchy")
     def handle_hierarchy_reorder(self, hierarchy_mapping: dict) -> None:

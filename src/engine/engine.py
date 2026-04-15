@@ -184,6 +184,12 @@ class Engine:
 
     def set_component_property(self, comp_name: str, prop: str, value: Any) -> None:
         if self.scene_mgr: self.scene_mgr.set_component_property(comp_name, prop, value)
+        
+    def group_selected_entities(self, entity_ids: List[int]) -> None:
+        if self.scene_mgr: self.scene_mgr.group_selected_entities(entity_ids)
+
+    def ungroup_selected_entity(self) -> None:
+        if self.scene_mgr: self.scene_mgr.ungroup_selected_entity()
 
     def copy_selected(self) -> None:
         if self.scene_mgr: self.scene_mgr.copy_selected()

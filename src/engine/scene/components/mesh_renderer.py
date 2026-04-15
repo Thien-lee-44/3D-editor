@@ -47,25 +47,22 @@ class MeshRenderer(Component):
     def to_dict(self) -> Dict[str, Any]:
         """
         Serializes mesh references and material configuration.
-        Defines precise logic to identify the origin of the geometry (e.g., File path vs 
-        Procedural primitive vs Mathematical surface) to ensure accurate reconstruction.
+        Implements strict Geometry Type routing to survive Undo/Redo JSON serialization.
         """
-        from src.engine.resources.resource_manager import ResourceManager
-        from src.engine.geometry.primitives import PrimitivesManager
-        
         data = {
             "visible": self.visible, 
             "is_proxy": getattr(self, 'is_proxy', False)
         }
         
-        # Geometry Origin Serialization
+        # =====================================================================
+        # 1. ROBUST GEOMETRY ORIGIN SERIALIZATION
+        # =====================================================================
+        data["geom_type"] = "none"
         if self.geometry:
-            if hasattr(self.geometry, 'filepath') and self.geometry.filepath and not self.is_proxy:
-                # Loaded from an external disk asset (.obj, .ply)
-                data["geometry_path"] = self.geometry.filepath
-                data["submesh_name"] = getattr(self.geometry, 'name', '')
-            elif hasattr(self.geometry, 'formula_str'):
-                # Procedurally generated Math Surface
+            geom_name = getattr(self.geometry, 'name', '')
+            
+            if hasattr(self.geometry, 'formula_str'):
+                data["geom_type"] = "math"
                 data["math_formula"] = self.geometry.formula_str
                 data["math_ranges"] = [
                     getattr(self.geometry, 'x_range', list(DEFAULT_MATH_RANGE)),
@@ -73,26 +70,25 @@ class MeshRenderer(Component):
                     getattr(self.geometry, 'resolution', DEFAULT_MATH_RESOLUTION)
                 ]
             elif self.is_proxy:
-                # Editor utility proxy
-                data["proxy_path"] = getattr(self.geometry, 'filepath', '') or getattr(self.geometry, 'name', '')
+                data["geom_type"] = "proxy"
+                data["proxy_path"] = getattr(self.geometry, 'filepath', '') or geom_name
+                
+            elif hasattr(self.geometry, 'filepath') and getattr(self.geometry, 'filepath', ''):
+                data["geom_type"] = "model"
+                data["geometry_path"] = self.geometry.filepath
+                data["submesh_name"] = geom_name
+                
+            elif geom_name in ["Cube", "Sphere", "Cylinder", "Cone", "Plane", "Quad", "Torus", "Grid"]:
+                data["geom_type"] = "primitive"
+                data["primitive_name"] = geom_name
             else:
-                # Standard hardcoded primitive (Cube, Sphere, etc.)
-                prim_name = None
-                for k, v in PrimitivesManager.get_3d_paths().items():
-                    if v == self.geometry: 
-                        prim_name = k
-                        break
-                if not prim_name:
-                    for k, v in PrimitivesManager.get_2d_paths().items():
-                        if v == self.geometry: 
-                            prim_name = k
-                            break
-                if prim_name: 
-                    data["primitive_name"] = prim_name
+                data["geom_type"] = "primitive"
+                data["primitive_name"] = geom_name or "Cube"
 
-        # Material State Serialization
+        # =====================================================================
+        # 2. MATERIAL STATE SERIALIZATION
+        # =====================================================================
         mat = self.material
-        
         data["use_adv"] = getattr(mat, 'use_advanced_mode', False)
         data["amb_s"] = getattr(mat, 'ambient_strength', DEFAULT_MAT_AMB_STRENGTH)
         data["diff_s"] = getattr(mat, 'diffuse_strength', DEFAULT_MAT_DIFF_STRENGTH)
@@ -106,7 +102,6 @@ class MeshRenderer(Component):
         data["spec_c"] = list(mat._specular)
         data["emis_c"] = list(mat.emission)
         
-        # Serialize strictly through the tex_paths dictionary
         data["tex_paths"] = getattr(mat, 'tex_paths', {})
         
         return data
@@ -122,19 +117,36 @@ class MeshRenderer(Component):
         self.visible = bool(data.get("visible", True))
         self.is_proxy = bool(data.get("is_proxy", False))
         
-        # Geometry Restitution Logic
-        if "geometry_path" in data:
-            path = data["geometry_path"]
+        # =====================================================================
+        # 1. ROBUST GEOMETRY RESTITUTION
+        # =====================================================================
+        geom_type = data.get("geom_type")
+        
+        # Backward compatibility layer for old project files
+        if not geom_type:
+            if "math_formula" in data: geom_type = "math"
+            elif "proxy_path" in data: geom_type = "proxy"
+            elif "geometry_path" in data: geom_type = "model"
+            elif "primitive_name" in data: geom_type = "primitive"
+            else: geom_type = "none"
+
+        if geom_type == "model":
+            path = data.get("geometry_path", "")
             sub_name = data.get("submesh_name", "")
             if os.path.exists(path):
+                # Retrieve from VRAM Cache rather than re-uploading
                 mesh_list = ResourceManager.get_model(path)
-                self.geometry = next((m for m in mesh_list if getattr(m, 'name', '') == sub_name), mesh_list[0]) if mesh_list else None
-        elif "primitive_name" in data:
-            geom = PrimitivesManager.get_primitive(data["primitive_name"], False)
+                if mesh_list:
+                    self.geometry = next((m for m in mesh_list if getattr(m, 'name', '') == sub_name), mesh_list[0])
+        
+        elif geom_type == "primitive":
+            p_name = data.get("primitive_name", "Cube")
+            geom = PrimitivesManager.get_primitive(p_name, False)
             if not geom: 
-                geom = PrimitivesManager.get_primitive(data["primitive_name"], True)
+                geom = PrimitivesManager.get_primitive(p_name, True)
             self.geometry = geom
-        elif "math_formula" in data:
+            
+        elif geom_type == "math":
             try:
                 from src.engine.geometry.math_surface import MathSurface
                 f = data["math_formula"]
@@ -143,12 +155,15 @@ class MeshRenderer(Component):
                 self.geometry.formula_str = f
             except Exception: 
                 pass
-        elif "proxy_path" in data:
-            path = data["proxy_path"]
-            if "proxy" in path: 
+                
+        elif geom_type == "proxy":
+            path = data.get("proxy_path", "")
+            if path:
                 self.geometry = PrimitivesManager.get_proxy(os.path.basename(path))
 
-        # Material Restitution Logic
+        # =====================================================================
+        # 2. MATERIAL RESTITUTION
+        # =====================================================================
         mat = self.material
         mat.use_advanced_mode = data.get("use_adv", False)
         mat.ambient_strength = data.get("amb_s", DEFAULT_MAT_AMB_STRENGTH)
@@ -163,11 +178,11 @@ class MeshRenderer(Component):
         mat._specular = glm.vec3(*data.get("spec_c", list(DEFAULT_MAT_SPECULAR)))
         mat.emission = glm.vec3(*data.get("emis_c", list(DEFAULT_MAT_EMISSION)))
         
-        # Strictly load modern dictionary structure, explicitly rejecting backward compatibility
         mat.tex_paths = data.get("tex_paths", {})
         
-        for attr_name, path in mat.tex_paths.items():
-            if path and os.path.exists(path):
-                tid = ResourceManager.load_texture(path)
+        # Safely request textures back into VRAM
+        for attr_name, t_path in mat.tex_paths.items():
+            if t_path and os.path.exists(t_path):
+                tid = ResourceManager.load_texture(t_path)
                 if tid != 0:
                     setattr(mat, attr_name, tid)

@@ -9,6 +9,7 @@ from src.ui.controllers.hierarchy_ctrl import HierarchyController
 from src.ui.controllers.inspector_ctrl import InspectorController
 from src.ui.controllers.asset_ctrl import AssetController
 from src.ui.controllers.math_gen_ctrl import MathGenController
+from src.ui.controllers.generator_ctrl import GeneratorController 
 from src.ui.controllers.timeline_ctrl import TimelineController
 
 class MainController:
@@ -24,6 +25,7 @@ class MainController:
         self.inspector_ctrl = InspectorController()
         self.asset_ctrl = AssetController()
         self.math_gen_ctrl = MathGenController()
+        self.generator_ctrl = GeneratorController()
         self.timeline_ctrl = TimelineController()
         
         self.main_window = EditorMainWindow(controller=self)
@@ -52,6 +54,10 @@ class MainController:
         if self.viewport_ctrl.process_continuous_input():
             ctx.events.emit(AppEvent.SCENE_CHANGED)
 
+    # =========================================================================
+    # ENTITY CREATION & MUTATION API
+    # =========================================================================
+
     @safe_execute(context="Add Empty Group")
     def add_empty_group(self) -> None:
         ctx.events.emit(AppEvent.ACTION_BEFORE_MUTATION)
@@ -59,6 +65,28 @@ class MainController:
         ctx.events.emit(AppEvent.HIERARCHY_NEEDS_REFRESH)
         ctx.events.emit(AppEvent.ENTITY_SELECTED, ctx.engine.get_selected_entity_id())
         ctx.events.emit(AppEvent.SCENE_CHANGED)
+
+    @safe_execute(context="Group Entities")
+    def group_selected(self) -> None:
+        """Triggers the grouping math logic if multiple objects are selected."""
+        ids = self.hierarchy_ctrl.selected_multi_ids
+        if len(ids) > 1:
+            ctx.events.emit(AppEvent.ACTION_BEFORE_MUTATION)
+            ctx.engine.group_selected_entities(ids)
+            ctx.events.emit(AppEvent.HIERARCHY_NEEDS_REFRESH)
+            ctx.events.emit(AppEvent.ENTITY_SELECTED, ctx.engine.get_selected_entity_id())
+            ctx.events.emit(AppEvent.SCENE_CHANGED)
+
+    @safe_execute(context="Ungroup Entity")
+    def ungroup_selected(self) -> None:
+        """Dissolves the selected group and elevates its children."""
+        idx = ctx.engine.get_selected_entity_id()
+        if idx >= 0:
+            ctx.events.emit(AppEvent.ACTION_BEFORE_MUTATION)
+            ctx.engine.ungroup_selected_entity()
+            ctx.events.emit(AppEvent.HIERARCHY_NEEDS_REFRESH)
+            ctx.events.emit(AppEvent.ENTITY_SELECTED, ctx.engine.get_selected_entity_id())
+            ctx.events.emit(AppEvent.SCENE_CHANGED)
 
     @safe_execute(context="Spawn Primitive")
     def spawn_primitive(self, name: str, is_2d: bool) -> None:
@@ -143,6 +171,10 @@ class MainController:
         ctx.engine.toggle_visibility_selected()
         ctx.events.emit(AppEvent.COMPONENT_PROPERTY_CHANGED)
         ctx.events.emit(AppEvent.SCENE_CHANGED)
+
+    # =========================================================================
+    # RENDER & MANIPULATION SETTINGS
+    # =========================================================================
 
     @safe_execute(context="Update Render Settings")
     def set_render_settings(self, wireframe: bool, mode: int, output: int, light: bool, tex: bool, vcolor: bool) -> None:
