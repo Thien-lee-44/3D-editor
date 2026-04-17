@@ -1,31 +1,15 @@
-import os
 import re
-import glm
-from typing import List, Tuple, Any
+from typing import List, Tuple
 
 from src.engine.scene.entity import Entity
 from src.engine.scene.components import TransformComponent, MeshRenderer, LightComponent, CameraComponent
-from src.engine.geometry.primitives import PrimitivesManager
-from src.engine.resources.resource_manager import ResourceManager
-from src.engine.graphics.buffer_objects import BufferObject
-
-from src.engine.scene.components.animation_cmp import AnimationComponent
-from src.engine.scene.components.semantic_cmp import SemanticComponent  # [NEW] Import Semantic
-from src.engine.synthetic.tracking_mgr import TrackingManager
-
-from src.app.config import (
-    DEFAULT_MANIPULATION_MODE, 
-    DEFAULT_CAMERA_NAME, 
-    DEFAULT_SCENE_CAM_POS, 
-    DEFAULT_PROXY_SCALE, 
-    DEFAULT_SCENE_LIGHT_ROT
-)
-
+from src.app.config import DEFAULT_MANIPULATION_MODE
 
 class Scene:
     """
     Acts as the primary state container for the 3D world context, orchestrating all active entities.
     Employs Data-Oriented Design principles (Structural Caching) to optimize the render loop.
+    Strictly decoupled from entity instantiation logic.
     """
     
     def __init__(self) -> None:
@@ -38,26 +22,6 @@ class Scene:
         self.cached_cameras: List[Tuple[TransformComponent, CameraComponent, Entity]] = []
         self.cached_lights: List[Tuple[TransformComponent, LightComponent, Entity]] = []
         self.cached_renderables: List[Tuple[TransformComponent, MeshRenderer, Entity]] = []
-        
-        # Bootstrap default scene environment
-        self.setup_default_camera()
-        self.setup_default_light()
-        
-        # Bootstrap default geometric entity
-        cube_entity = Entity("Default Cube")
-        cube_entity.add_component(TransformComponent())
-        
-        # [CRITICAL FIX] Strictly decouple Animation from Semantics for the Default Cube
-        cube_entity.add_component(AnimationComponent())
-        cube_entity.add_component(SemanticComponent(track_id=TrackingManager.get_next_id(), class_id=3)) # 3 = Misc
-            
-        renderer = cube_entity.add_component(MeshRenderer())
-        geom = PrimitivesManager.get_primitive("Cube")
-        
-        if geom: 
-            renderer.geometry = geom
-            
-        self.add_entity(cube_entity)
 
     def _rebuild_cache(self) -> None:
         """
@@ -125,7 +89,7 @@ class Scene:
                     
             if ent in self.entities: 
                 self.entities.remove(ent)
-                
+            
             self.selected_index = -1
             self._rebuild_cache()
 
@@ -134,46 +98,3 @@ class Scene:
         self.entities.clear()
         self.selected_index = -1
         self._rebuild_cache()
-
-    def setup_default_camera(self) -> None:
-        """Bootstraps the mandatory viewing frustum required by the rasterizer."""
-        cam = Entity(DEFAULT_CAMERA_NAME)
-        tf = cam.add_component(TransformComponent())
-        tf.position = glm.vec3(*DEFAULT_SCENE_CAM_POS)
-        tf.scale = glm.vec3(DEFAULT_PROXY_SCALE) 
-        
-        # [CRITICAL FIX] Camera only gets Animation (for movement), NO Semantic
-        cam.add_component(AnimationComponent())
-        
-        cam_comp = CameraComponent(mode="Perspective")
-        cam_comp.is_active = True 
-        cam.add_component(cam_comp)
-        
-        renderer = cam.add_component(MeshRenderer())
-        renderer.is_proxy = True
-        
-        proxy_path = PrimitivesManager.get_proxy_path("proxy_camera.ply")
-        if os.path.exists(proxy_path):
-            mesh_list = ResourceManager.get_model(proxy_path)
-            if mesh_list:
-                sub = mesh_list[0]
-                geom = BufferObject(sub.vertices, sub.indices, sub.vertex_size)
-                geom.filepath = proxy_path
-                renderer.geometry = geom
-                
-        self.add_entity(cam)
-
-    def setup_default_light(self) -> None:
-        """Bootstraps a fundamental global illumination source."""
-        light = Entity("Directional Light")
-        tf = light.add_component(TransformComponent())
-        
-        tf.rotation = glm.vec3(*DEFAULT_SCENE_LIGHT_ROT)
-        tf.quat_rot = glm.quat(glm.radians(tf.rotation))
-        
-        # [CRITICAL FIX] Light only gets Animation (for blinking/moving), NO Semantic
-        light.add_component(AnimationComponent())
-        
-        light.add_component(LightComponent(light_type="Directional"))
-        
-        self.add_entity(light)

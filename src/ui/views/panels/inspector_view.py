@@ -1,3 +1,4 @@
+import glm
 from PySide6.QtWidgets import QVBoxLayout, QScrollArea, QWidget
 from PySide6.QtCore import Qt
 from typing import Any, Dict
@@ -19,10 +20,7 @@ from src.app.config import (
 )
 
 class InspectorPanelView(BasePanel):
-    """
-    Dynamic View that aggregates specific component property widgets based on the selected entity.
-    Acts as the primary interface for modifying ECS component data.
-    """
+    """Orchestrates data routing between Live World State and the Dynamic Keyframe Bag."""
     PANEL_TITLE = PANEL_TITLE_INSPECTOR
     PANEL_DOCK_AREA = Qt.RightDockWidgetArea
     PANEL_MIN_WIDTH = PANEL_MIN_WIDTH_INSPECTOR
@@ -31,18 +29,16 @@ class InspectorPanelView(BasePanel):
         self.layout = QVBoxLayout(self)
         self.layout.setContentsMargins(0, 0, 0, 0)
         
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QScrollArea.NoFrame)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff) 
+        self.scroll = QScrollArea()
+        self.scroll.setWidgetResizable(True)
+        self.scroll.setFrameShape(QScrollArea.NoFrame)
+        self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff) 
         
         self.content = QWidget()
         self.content.setMinimumWidth(PANEL_CONTENT_MIN_WIDTH)
-        content_layout = QVBoxLayout(self.content)
-        
-        m = DEFAULT_UI_MARGIN
-        content_layout.setContentsMargins(m, m, m, m)
-        content_layout.setAlignment(Qt.AlignTop)
+        self.content_layout = QVBoxLayout(self.content)
+        self.content_layout.setContentsMargins(DEFAULT_UI_MARGIN, DEFAULT_UI_MARGIN, DEFAULT_UI_MARGIN, DEFAULT_UI_MARGIN)
+        self.content_layout.setAlignment(Qt.AlignTop)
 
         self.header_widget = HeaderWidget(self._controller)
         self.semantic_widget = SemanticWidget(self._controller)
@@ -52,72 +48,114 @@ class InspectorPanelView(BasePanel):
         self.light_widget = LightWidget(self._controller)
         self.camera_widget = CameraWidget(self._controller)
 
-        content_layout.addWidget(self.header_widget)
-        content_layout.addWidget(self.semantic_widget)
-        content_layout.addWidget(self.animation_widget)
-        content_layout.addWidget(self.transform_widget)
-        content_layout.addWidget(self.mesh_widget)
-        content_layout.addWidget(self.light_widget)
-        content_layout.addWidget(self.camera_widget)
-        content_layout.addStretch(1)
+        self.content_layout.addWidget(self.header_widget)
+        self.content_layout.addWidget(self.semantic_widget)
+        self.content_layout.addWidget(self.animation_widget)
+        self.content_layout.addWidget(self.transform_widget)
+        self.content_layout.addWidget(self.mesh_widget)
+        self.content_layout.addWidget(self.light_widget)
+        self.content_layout.addWidget(self.camera_widget)
+        self.content_layout.addStretch(1)
         
-        scroll.setWidget(self.content)
-        self.layout.addWidget(scroll)
-        
+        self.scroll.setWidget(self.content)
+        self.layout.addWidget(self.scroll)
         self.hide_all_components()
 
     def hide_all_components(self) -> None:
-        widgets = [
-            self.header_widget, 
-            self.semantic_widget,
-            self.animation_widget,
-            self.transform_widget, 
-            self.mesh_widget, 
-            self.light_widget, 
-            self.camera_widget
-        ]
-        for widget in widgets: 
-            widget.setVisible(False)
+        self.content.setStyleSheet("")
+        for w in [self.header_widget, self.semantic_widget, self.animation_widget, 
+                  self.transform_widget, self.mesh_widget, self.light_widget, self.camera_widget]:
+            w.setVisible(False)
 
     def update_inspector_data(self, data: Dict[str, Any]) -> None:
+        kf_idx = data.get("active_keyframe_index", -1)
+        anim_data = data.get("anim", {})
+        keyframes = anim_data.get("keyframes", [])
+        
         has_tf = bool(data.get("tf"))
         has_light = bool(data.get("light"))
         has_cam = bool(data.get("cam"))
         has_semantic = bool(data.get("semantic"))
         has_anim = bool(data.get("anim"))
-        has_mesh = bool(data.get("mesh") and not has_light and not has_cam)
-        mesh_visible = data["mesh"]["visible"] if data.get("mesh") else True
+        
+        # Hide MeshWidget if the entity is a Light or Camera (proxy meshes should not be edited)
+        has_mesh = bool(data.get("mesh")) and not has_light and not has_cam
+        
+        tf_data = data.get("tf", {})
+        light_data = data.get("light", {})
+        mesh_data = data.get("mesh", {})
+        cam_data = data.get("cam", {})
+        
+        # KEYFRAME BAG EXTRACTION
+        if 0 <= kf_idx < len(keyframes):
+            kf_state = keyframes[kf_idx].get("state", {})
+            
+            if "Transform" in kf_state:
+                snap_tf = kf_state["Transform"]
+                if "position" in snap_tf: tf_data["position"] = snap_tf["position"]
+                if "scale" in snap_tf: tf_data["scale"] = snap_tf["scale"]
+                if "rotation" in snap_tf: tf_data["rotation"] = snap_tf["rotation"]
+                if "quat_rot" in snap_tf: tf_data["quat_rot"] = snap_tf["quat_rot"]
+                    
+            if "Light" in kf_state:
+                light_data = dict(data.get("light", {}))
+                for key, val in kf_state["Light"].items():
+                    light_data[key] = val
+                        
+            if "Mesh" in kf_state:
+                mesh_data = dict(data.get("mesh", {}))
+                for key, val in kf_state["Mesh"].items():
+                    mesh_data[key] = val
 
-        self.header_widget.update_data(data["name"])
+        self.header_widget.update_data(data.get("name", "Entity"))
+        self.header_widget.setVisible(True)
         
         if has_semantic:
             self.semantic_widget.update_data(data["semantic"])
+            self.semantic_widget.setVisible(True)
+        else:
+            self.semantic_widget.setVisible(False)
+            
         if has_anim:
-            self.animation_widget.update_data(data["anim"])
+            anim_payload = dict(anim_data)
+            anim_payload["active_keyframe_index"] = kf_idx
+            anim_payload["active_keyframe_time"] = data.get("active_keyframe_time", 0.0)
+            self.animation_widget.update_data(anim_payload)
+            self.animation_widget.setVisible(True)
+        else:
+            self.animation_widget.setVisible(False)
+            
         if has_tf: 
-            self.transform_widget.update_data(data["tf"], has_light, data["light"]["type"] if has_light else "")
+            # Simplified update call: transform_widget now parses locked_axes directly from tf_data
+            self.transform_widget.update_data(tf_data)
+            self.transform_widget.setVisible(True)
+        else:
+            self.transform_widget.setVisible(False)
+            
         if has_mesh: 
-            self.mesh_widget.update_data(data["mesh"])
+            self.mesh_widget.update_data(mesh_data)
+            self.mesh_widget.setVisible(True)
+        else:
+            self.mesh_widget.setVisible(False)
+            
         if has_light: 
-            self.light_widget.update_data(data["light"], mesh_visible)
+            m_vis = data["mesh"]["visible"] if data.get("mesh") else True
+            self.light_widget.update_data(light_data, m_vis)
+            self.light_widget.setVisible(True)
+        else:
+            self.light_widget.setVisible(False)
+            
         if has_cam: 
-            self.camera_widget.update_data(data["cam"], mesh_visible)
-
-        self.header_widget.setVisible(True)
-        self.semantic_widget.setVisible(has_semantic)
-        self.animation_widget.setVisible(has_anim)
-        self.transform_widget.setVisible(has_tf)
-        self.mesh_widget.setVisible(has_mesh)
-        self.light_widget.setVisible(has_light)
-        self.camera_widget.setVisible(has_cam)
+            m_vis = data["mesh"]["visible"] if data.get("mesh") else True
+            self.camera_widget.update_data(cam_data, m_vis)
+            self.camera_widget.setVisible(True)
+        else:
+            self.camera_widget.setVisible(False)
 
     def fast_update_transform(self, transform_tuple: tuple) -> None:
-        if not isinstance(transform_tuple, tuple) or len(transform_tuple) != 2:
-            return
-            
+        if not isinstance(transform_tuple, tuple) or len(transform_tuple) != 2: return
         mode, values = transform_tuple
         self.transform_widget.fast_update_single_axis(mode, values)
-        
         if mode == "ROTATE" and self.light_widget.isVisible():
             if hasattr(self.light_widget, 'fast_update_rotation'):
                 self.light_widget.fast_update_rotation(values)

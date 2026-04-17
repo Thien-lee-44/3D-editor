@@ -68,45 +68,43 @@ class LightComponent(Component):
         return base * self.intensity
 
     def to_dict(self) -> Dict[str, Any]:
+        """Strict JSON mapping. Keys match exact variable names."""
         return {
             "type": self.type, 
             "on": self.on, 
-            "intensity": self.intensity,
-            "use_adv": self.use_advanced_mode,
-            "amb_s": self.ambient_strength, 
-            "diff_s": self.diffuse_strength, 
-            "spec_s": self.specular_strength,
-            "base_c": list(self.color), 
-            "amb_c": list(self.explicit_ambient),
-            "diff_c": list(self.explicit_diffuse), 
-            "spec_c": list(self.explicit_specular),
-            "cut": self.cutOff, 
-            "out": self.outerCutOff, 
-            "yaw": 0.0, 
-            "pitch": 0.0,
-            
-            "const": self.constant,
-            "lin": self.linear,
-            "quad": self.quadratic
+            "intensity": float(self.intensity),
+            "use_advanced_mode": self.use_advanced_mode,
+            "ambient_strength": float(self.ambient_strength), 
+            "diffuse_strength": float(self.diffuse_strength), 
+            "specular_strength": float(self.specular_strength),
+            "color": list(self.color), 
+            "explicit_ambient": list(self.explicit_ambient),
+            "explicit_diffuse": list(self.explicit_diffuse), 
+            "explicit_specular": list(self.explicit_specular),
+            "cutOff": float(self.cutOff), 
+            "outerCutOff": float(self.outerCutOff), 
+            "constant": float(self.constant),
+            "linear": float(self.linear),
+            "quadratic": float(self.quadratic)
         }
 
     def from_dict(self, data: Dict[str, Any]) -> None:
         self.type = data.get("type", "Point")
         self.on = bool(data.get("on", True))
         self.intensity = float(data.get("intensity", DEFAULT_LIGHT_INTENSITY))
-        self.use_advanced_mode = bool(data.get("use_adv", False))
-        self.ambient_strength = float(data.get("amb_s", DEFAULT_LIGHT_AMBIENT))
-        self.diffuse_strength = float(data.get("diff_s", DEFAULT_LIGHT_DIFFUSE))
-        self.specular_strength = float(data.get("spec_s", DEFAULT_LIGHT_SPECULAR))
+        self.use_advanced_mode = bool(data.get("use_advanced_mode", False))
+        self.ambient_strength = float(data.get("ambient_strength", DEFAULT_LIGHT_AMBIENT))
+        self.diffuse_strength = float(data.get("diffuse_strength", DEFAULT_LIGHT_DIFFUSE))
+        self.specular_strength = float(data.get("specular_strength", DEFAULT_LIGHT_SPECULAR))
         
-        self.color = glm.vec3(*data.get("base_c", list(DEFAULT_LIGHT_COLOR)))
-        self.explicit_ambient = glm.vec3(*data.get("amb_c", list(DEFAULT_LIGHT_COLOR)))
-        self.explicit_diffuse = glm.vec3(*data.get("diff_c", list(DEFAULT_LIGHT_COLOR)))
-        self.explicit_specular = glm.vec3(*data.get("spec_c", list(DEFAULT_LIGHT_COLOR)))
+        self.color = glm.vec3(*data.get("color", list(DEFAULT_LIGHT_COLOR)))
+        self.explicit_ambient = glm.vec3(*data.get("explicit_ambient", list(DEFAULT_LIGHT_COLOR)))
+        self.explicit_diffuse = glm.vec3(*data.get("explicit_diffuse", list(DEFAULT_LIGHT_COLOR)))
+        self.explicit_specular = glm.vec3(*data.get("explicit_specular", list(DEFAULT_LIGHT_COLOR)))
         
-        self.cutOff = float(data.get("cut", math.cos(math.radians(DEFAULT_SPOT_INNER_ANGLE))))
-        self.outerCutOff = float(data.get("out", math.cos(math.radians(DEFAULT_SPOT_OUTER_ANGLE))))
+        self.cutOff = float(data.get("cutOff", math.cos(math.radians(DEFAULT_SPOT_INNER_ANGLE))))
+        self.outerCutOff = float(data.get("outerCutOff", math.cos(math.radians(DEFAULT_SPOT_OUTER_ANGLE))))
         
-        self.constant = float(data.get("const", DEFAULT_LIGHT_CONSTANT))
-        self.linear = float(data.get("lin", DEFAULT_LIGHT_LINEAR))
-        self.quadratic = float(data.get("quad", DEFAULT_LIGHT_QUADRATIC))
+        self.constant = float(data.get("constant", DEFAULT_LIGHT_CONSTANT))
+        self.linear = float(data.get("linear", DEFAULT_LIGHT_LINEAR))
+        self.quadratic = float(data.get("quadratic", DEFAULT_LIGHT_QUADRATIC))

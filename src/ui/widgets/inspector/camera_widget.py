@@ -49,7 +49,7 @@ class CameraWidget(BaseComponentWidget):
         self.layout.addLayout(f_cam)
 
     def update_data(self, cd: Dict[str, Any], mesh_visible: bool) -> None:
-        if cd["active"]:
+        if cd["is_active"]:
             self.btn_set_cam_active.setText("Active Camera")
             self.btn_set_cam_active.setStyleSheet(STYLE_BTN_ACTIVE_CAM)
             self.btn_set_cam_active.setEnabled(False) 

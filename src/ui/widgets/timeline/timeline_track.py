@@ -4,14 +4,9 @@ from PySide6.QtCore import Qt, Signal, QPoint
 from typing import List
 
 class TimelineTrackWidget(QWidget):
-    """
-    Custom QPainter-based widget replacing the standard QSlider.
-    Acts as a professional Dope Sheet / Curve Editor interface for manipulating keyframes directly.
-    """
     time_scrubbed = Signal(float)
     keyframe_selected = Signal(int)
     keyframe_moved = Signal(int, float)
-    keyframe_double_clicked = Signal(float)
 
     def __init__(self) -> None:
         super().__init__()
@@ -34,7 +29,7 @@ class TimelineTrackWidget(QWidget):
         self.COLOR_PLAYHEAD = QColor(66, 165, 245)
         self.COLOR_KF_NORMAL = QColor(180, 180, 180)
         self.COLOR_KF_SELECTED = QColor(255, 165, 0)
-        self.COLOR_KF_LOCKED = QColor(200, 50, 50) 
+        self.COLOR_KF_BASE = QColor(231, 76, 60) 
         
     def set_max_time(self, t: float) -> None:
         self.duration_max = max(0.1, t)
@@ -99,10 +94,12 @@ class TimelineTrackWidget(QWidget):
             x = int(self._time_to_x(kf_time))
             is_selected = (i == self.selected_kf_index)
             
-            if i == 0:
-                color = self.COLOR_KF_LOCKED if not is_selected else self.COLOR_KF_SELECTED
+            if is_selected:
+                color = self.COLOR_KF_SELECTED
+            elif i == 0:
+                color = self.COLOR_KF_BASE
             else:
-                color = self.COLOR_KF_SELECTED if is_selected else self.COLOR_KF_NORMAL
+                color = self.COLOR_KF_NORMAL
             
             painter.setBrush(color)
             painter.setPen(Qt.NoPen)
@@ -138,14 +135,9 @@ class TimelineTrackWidget(QWidget):
                 self.selected_kf_index = clicked_kf
                 self.keyframe_selected.emit(clicked_kf)
                 
-                if clicked_kf > 0:
-                    self.is_dragging_kf = True
-                    self.drag_kf_index = clicked_kf
-                else:
-                    self.is_dragging_kf = False
-                    self.drag_kf_index = -1
+                self.is_dragging_kf = True
+                self.drag_kf_index = clicked_kf
             else:
-                # Emit un-select signal when clicking empty track space
                 self.selected_kf_index = -1
                 self.keyframe_selected.emit(-1) 
                 
@@ -162,23 +154,22 @@ class TimelineTrackWidget(QWidget):
             new_time = self._x_to_time(x)
             self.time_scrubbed.emit(new_time)
             
+        # [DRAG LOCK]: Ngăn chặn việc vô tình kéo (drag) Base State đi khỏi mốc 0.0s
         elif self.is_dragging_kf and self.drag_kf_index > 0:
             new_time = self._x_to_time(x)
-            self.keyframes[self.drag_kf_index] = new_time
-            self.update()
+            if new_time > 0.01: 
+                self.keyframes[self.drag_kf_index] = new_time
+                self.keyframe_moved.emit(self.drag_kf_index, new_time)
+                self.update()
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
         if event.button() == Qt.LeftButton:
+            # [DRAG LOCK]: Ngăn chặn việc vô tình kéo (drag) Base State đi khỏi mốc 0.0s
             if self.is_dragging_kf and self.drag_kf_index > 0:
                 final_time = self._x_to_time(event.position().x())
-                self.keyframe_moved.emit(self.drag_kf_index, final_time)
+                if final_time > 0.01:
+                    self.keyframe_moved.emit(self.drag_kf_index, final_time)
                 
             self.is_scrubbing = False
             self.is_dragging_kf = False
             self.drag_kf_index = -1
-
-    def mouseDoubleClickEvent(self, event: QMouseEvent) -> None:
-        if event.button() == Qt.LeftButton:
-            x = event.position().x()
-            new_time = self._x_to_time(x)
-            self.keyframe_double_clicked.emit(new_time)

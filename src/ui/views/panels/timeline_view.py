@@ -109,7 +109,6 @@ class TimelinePanelView(BasePanel):
         self.ruler.time_scrubbed.connect(self._on_scrubbed)
         self.track.time_scrubbed.connect(self._on_scrubbed)
         self.track.keyframe_moved.connect(self._on_kf_moved)
-        self.track.keyframe_double_clicked.connect(self._on_kf_double_clicked)
         self.track.keyframe_selected.connect(self._on_kf_selected)
 
     # =========================================================================
@@ -152,10 +151,6 @@ class TimelinePanelView(BasePanel):
     def _on_kf_moved(self, index: int, new_time: float) -> None:
         if self._controller:
             self._controller.move_keyframe(index, new_time)
-
-    def _on_kf_double_clicked(self, time: float) -> None:
-        if self._controller:
-            self._controller.add_keyframe_at_time(time)
 
     def _on_kf_selected(self, index: int) -> None:
         if self._controller:

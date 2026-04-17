@@ -86,23 +86,23 @@ class MeshRenderer(Component):
                 data["primitive_name"] = geom_name or "Cube"
 
         # =====================================================================
-        # 2. MATERIAL STATE SERIALIZATION
+        # 2. MATERIAL STATE SERIALIZATION (Golden Rule Names)
         # =====================================================================
         mat = self.material
-        data["use_adv"] = getattr(mat, 'use_advanced_mode', False)
-        data["amb_s"] = getattr(mat, 'ambient_strength', DEFAULT_MAT_AMB_STRENGTH)
-        data["diff_s"] = getattr(mat, 'diffuse_strength', DEFAULT_MAT_DIFF_STRENGTH)
-        data["spec_s"] = getattr(mat, 'specular_strength', DEFAULT_MAT_SPEC_STRENGTH)
-        data["shine"] = getattr(mat, 'shininess', DEFAULT_MAT_SHININESS)
-        data["opacity"] = getattr(mat, 'opacity', DEFAULT_MAT_OPACITY)
+        data["mat_use_advanced_mode"] = getattr(mat, 'use_advanced_mode', False)
+        data["mat_ambient_strength"] = float(getattr(mat, 'ambient_strength', DEFAULT_MAT_AMB_STRENGTH))
+        data["mat_diffuse_strength"] = float(getattr(mat, 'diffuse_strength', DEFAULT_MAT_DIFF_STRENGTH))
+        data["mat_specular_strength"] = float(getattr(mat, 'specular_strength', DEFAULT_MAT_SPEC_STRENGTH))
+        data["mat_shininess"] = float(getattr(mat, 'shininess', DEFAULT_MAT_SHININESS))
+        data["mat_opacity"] = float(getattr(mat, 'opacity', DEFAULT_MAT_OPACITY))
         
-        data["base_c"] = list(mat.base_color)
-        data["amb_c"] = list(mat._ambient)
-        data["diff_c"] = list(mat._diffuse)
-        data["spec_c"] = list(mat._specular)
-        data["emis_c"] = list(mat.emission)
+        data["mat_base_color"] = list(mat.base_color)
+        data["mat__ambient"] = list(mat._ambient)
+        data["mat__diffuse"] = list(mat._diffuse)
+        data["mat__specular"] = list(mat._specular)
+        data["mat_emission"] = list(mat.emission)
         
-        data["tex_paths"] = getattr(mat, 'tex_paths', {})
+        data["mat_tex_paths"] = getattr(mat, 'tex_paths', {})
         
         return data
 
@@ -120,15 +120,7 @@ class MeshRenderer(Component):
         # =====================================================================
         # 1. ROBUST GEOMETRY RESTITUTION
         # =====================================================================
-        geom_type = data.get("geom_type")
-        
-        # Backward compatibility layer for old project files
-        if not geom_type:
-            if "math_formula" in data: geom_type = "math"
-            elif "proxy_path" in data: geom_type = "proxy"
-            elif "geometry_path" in data: geom_type = "model"
-            elif "primitive_name" in data: geom_type = "primitive"
-            else: geom_type = "none"
+        geom_type = data.get("geom_type", "none")
 
         if geom_type == "model":
             path = data.get("geometry_path", "")
@@ -165,20 +157,20 @@ class MeshRenderer(Component):
         # 2. MATERIAL RESTITUTION
         # =====================================================================
         mat = self.material
-        mat.use_advanced_mode = data.get("use_adv", False)
-        mat.ambient_strength = data.get("amb_s", DEFAULT_MAT_AMB_STRENGTH)
-        mat.diffuse_strength = data.get("diff_s", DEFAULT_MAT_DIFF_STRENGTH)
-        mat.specular_strength = data.get("spec_s", DEFAULT_MAT_SPEC_STRENGTH)
-        mat.shininess = data.get("shine", DEFAULT_MAT_SHININESS)
-        mat.opacity = data.get("opacity", DEFAULT_MAT_OPACITY)
+        mat.use_advanced_mode = bool(data.get("mat_use_advanced_mode", False))
+        mat.ambient_strength = float(data.get("mat_ambient_strength", DEFAULT_MAT_AMB_STRENGTH))
+        mat.diffuse_strength = float(data.get("mat_diffuse_strength", DEFAULT_MAT_DIFF_STRENGTH))
+        mat.specular_strength = float(data.get("mat_specular_strength", DEFAULT_MAT_SPEC_STRENGTH))
+        mat.shininess = float(data.get("mat_shininess", DEFAULT_MAT_SHININESS))
+        mat.opacity = float(data.get("mat_opacity", DEFAULT_MAT_OPACITY))
         
-        mat.base_color = glm.vec3(*data.get("base_c", list(DEFAULT_MAT_BASE_COLOR)))
-        mat._ambient = glm.vec3(*data.get("amb_c", list(DEFAULT_MAT_AMBIENT)))
-        mat._diffuse = glm.vec3(*data.get("diff_c", list(DEFAULT_MAT_DIFFUSE)))
-        mat._specular = glm.vec3(*data.get("spec_c", list(DEFAULT_MAT_SPECULAR)))
-        mat.emission = glm.vec3(*data.get("emis_c", list(DEFAULT_MAT_EMISSION)))
+        mat.base_color = glm.vec3(*data.get("mat_base_color", list(DEFAULT_MAT_BASE_COLOR)))
+        mat._ambient = glm.vec3(*data.get("mat__ambient", list(DEFAULT_MAT_AMBIENT)))
+        mat._diffuse = glm.vec3(*data.get("mat__diffuse", list(DEFAULT_MAT_DIFFUSE)))
+        mat._specular = glm.vec3(*data.get("mat__specular", list(DEFAULT_MAT_SPECULAR)))
+        mat.emission = glm.vec3(*data.get("mat_emission", list(DEFAULT_MAT_EMISSION)))
         
-        mat.tex_paths = data.get("tex_paths", {})
+        mat.tex_paths = data.get("mat_tex_paths", {})
         
         # Safely request textures back into VRAM
         for attr_name, t_path in mat.tex_paths.items():

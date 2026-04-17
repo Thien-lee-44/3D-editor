@@ -23,7 +23,7 @@ class AssetController:
 
     def on_global_selection(self, entity_id: int) -> None:
         data = ctx.engine.get_selected_entity_data()
-        path_to_find = data["mesh"]["tex_paths"].get("map_diffuse", "") if data and data.get("mesh") else ""
+        path_to_find = data["mesh"]["mat_tex_paths"].get("map_diffuse", "") if data and data.get("mesh") else ""
         self.view.highlight_texture(path_to_find)
 
     @safe_execute(context="Import Model")

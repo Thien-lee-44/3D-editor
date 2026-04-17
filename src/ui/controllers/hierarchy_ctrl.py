@@ -39,6 +39,25 @@ class HierarchyController:
         ctx.events.emit(AppEvent.HIERARCHY_NEEDS_REFRESH)
         ctx.events.emit(AppEvent.SCENE_CHANGED)
 
+    @safe_execute(context="Rename Entity")
+    def handle_rename(self, entity_id: int, new_name: str) -> None:
+        """Synchronizes an inline hierarchy rename directly into the engine state."""
+        ctx.events.emit(AppEvent.ACTION_BEFORE_MUTATION)
+        
+        if hasattr(ctx.engine, 'rename_entity'):
+            ctx.engine.rename_entity(entity_id, new_name)
+        else:
+            # Fallback logic leveraging existing API if a direct rename method is unavailable
+            prev_id = ctx.engine.get_selected_entity_id()
+            ctx.engine.select_entity(entity_id)
+            ctx.engine.set_component_property("Entity", "name", new_name)
+            ctx.engine.select_entity(prev_id)
+            
+        if ctx.engine.get_selected_entity_id() == entity_id:
+            ctx.events.emit(AppEvent.COMPONENT_PROPERTY_CHANGED)
+            
+        ctx.events.emit(AppEvent.SCENE_CHANGED)
+
     def show_context_menu(self, global_pos: QPoint) -> None:
         if hasattr(ctx, 'main_window') and hasattr(ctx.main_window, 'show_context_menu'):
             ctx.main_window.show_context_menu(global_pos)

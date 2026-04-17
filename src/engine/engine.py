@@ -42,6 +42,8 @@ class Engine:
         
         self.animator = AnimatorSystem(self.scene)
         
+        self.entity_fac.setup_default_scene()
+        
         glEnable(GL_DEPTH_TEST)
         glEnable(GL_BLEND)
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
@@ -111,7 +113,6 @@ class Engine:
     # =========================================================================
     
     def preload_model_to_cache(self, path: str) -> None:
-        """Parses the model file and loads its BufferObjects into the GPU cache without spawning it in the scene."""
         ResourceManager.get_model(path)
     
     def get_project_models(self) -> list: 
@@ -148,7 +149,6 @@ class Engine:
     # EXPLICIT MANAGER DELEGATIONS
     # =========================================================================
     
-    # ------------------ SceneManager Delegates ------------------
     def has_clipboard(self) -> bool:
         return self.scene_mgr.has_clipboard() if self.scene_mgr else False
 
@@ -178,6 +178,7 @@ class Engine:
 
     def clear_scene(self) -> None:
         if self.scene_mgr: self.scene_mgr.clear_scene()
+        if self.entity_fac: self.entity_fac.setup_default_scene()
 
     def get_selected_entity_data(self) -> Optional[Dict[str, Any]]:
         return self.scene_mgr.get_selected_entity_data() if self.scene_mgr else None
@@ -239,7 +240,6 @@ class Engine:
     def export_scene_obj(self, export_dir: str) -> None:
         if self.scene_mgr: self.scene_mgr.export_scene_obj(export_dir)
 
-    # ------------------ EntityFactory Delegates ------------------
     def add_empty_group(self) -> None:
         if self.entity_fac: self.entity_fac.add_empty_group()
 
@@ -258,7 +258,6 @@ class Engine:
     def spawn_model_from_path(self, path: str) -> None:
         if self.entity_fac: self.entity_fac.spawn_model_from_path(path)
 
-    # ------------------ InteractionManager Delegates ------------------
     def check_gizmo_hover(self, mx: float, my: float, width: int, height: int, custom_tf=None, custom_view=None, custom_proj=None, is_hud=False) -> Optional[str]:
         return self.interaction_mgr.check_gizmo_hover(mx, my, width, height, custom_tf, custom_view, custom_proj, is_hud) if self.interaction_mgr else None
 
@@ -292,18 +291,12 @@ class Engine:
     def get_screen_axis_labels_data(self, width: int, height: int) -> List[Dict[str, Any]]:
         return self.interaction_mgr.get_screen_axis_labels_data(width, height) if self.interaction_mgr else []
 
-    # ------------------ Renderer Delegates ------------------
     def toggle_wireframe(self) -> None:
         if self.renderer: self.renderer.toggle_wireframe()
 
     def set_render_settings(self, wireframe: bool, mode: int, output: int, light: bool, tex: bool, vcolor: bool) -> None:
         if self.renderer: self.renderer.set_render_settings(wireframe, mode, output, light, tex, vcolor)
-        
 
-    # =========================================================================
-    # SEMANTIC DELEGATION
-    # =========================================================================
-    
     def get_semantic_classes(self) -> dict:
         return self.scene_mgr.get_semantic_classes()
 
@@ -312,3 +305,19 @@ class Engine:
 
     def update_semantic_class_color(self, class_id: int, color: list) -> None:
         self.scene_mgr.update_semantic_class_color(class_id, color)
+
+    # ------------------ ANIMATION FACADE DELEGATES ------------------
+    def get_animation_info(self) -> dict:
+        return self.scene_mgr.get_animation_info() if self.scene_mgr else {}
+
+    def set_active_keyframe(self, index: int) -> float:
+        return self.scene_mgr.set_active_keyframe(index) if self.scene_mgr else 0.0
+
+    def sync_gizmo_to_keyframe(self, current_time: float) -> bool:
+        return self.scene_mgr.sync_gizmo_to_keyframe(current_time) if self.scene_mgr else False
+
+    def update_keyframe_property(self, current_time: float, comp_name: str, prop: str, value: Any) -> tuple:
+        return self.scene_mgr.update_keyframe_property(current_time, comp_name, prop, value) if self.scene_mgr else (False, False, 0.0)
+
+    def add_and_focus_keyframe(self, time: float) -> int:
+        return self.scene_mgr.add_and_focus_keyframe(time) if self.scene_mgr else -1

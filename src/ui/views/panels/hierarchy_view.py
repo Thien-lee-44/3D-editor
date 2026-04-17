@@ -1,4 +1,4 @@
-from PySide6.QtWidgets import QVBoxLayout, QTreeWidgetItem, QTreeWidgetItemIterator, QStyle
+from PySide6.QtWidgets import QVBoxLayout, QTreeWidgetItem, QStyle
 from PySide6.QtCore import Qt, QPoint
 from PySide6.QtGui import QKeyEvent
 from typing import Any, Dict, Optional, List, Set
@@ -27,6 +27,7 @@ class HierarchyPanelView(BasePanel):
 
     def bind_events(self) -> None:
         self.tree_widget.itemSelectionChanged.connect(self._on_selection_changed)
+        self.tree_widget.itemChanged.connect(self._on_item_changed)
         self.tree_widget.setContextMenuPolicy(Qt.CustomContextMenu)
         self.tree_widget.customContextMenuRequested.connect(self._on_context_menu)
 
@@ -81,6 +82,17 @@ class HierarchyPanelView(BasePanel):
                 
         self._is_internal_selection = False
 
+    def _on_item_changed(self, item: QTreeWidgetItem, column: int) -> None:
+        """Fires when the user completes inline editing of a tree item."""
+        if self._is_updating_externally or not self._controller:
+            return
+            
+        ent_id = item.data(0, Qt.UserRole)
+        new_name = item.text(0).strip()
+        
+        if new_name and ent_id is not None:
+            self._controller.handle_rename(ent_id, new_name)
+
     def _on_context_menu(self, pos: QPoint) -> None:
         if self._controller and hasattr(self._controller, 'show_context_menu'):
             global_pos = self.tree_widget.mapToGlobal(pos)
@@ -94,20 +106,24 @@ class HierarchyPanelView(BasePanel):
         self._is_updating_externally = True
         self.tree_widget.blockSignals(True)
         
+        self.tree_widget.clearSelection()
+        self.tree_widget.setCurrentItem(None)
+        
         expanded_ids: Set[int] = set()
         is_first_load = self.tree_widget.topLevelItemCount() == 0
         
-        iterator = QTreeWidgetItemIterator(self.tree_widget)
-        while iterator.value():
-            item = iterator.value()
+        def cache_expanded(item: QTreeWidgetItem) -> None:
             if item.isExpanded():
                 ent_id = item.data(0, Qt.UserRole)
                 if ent_id is not None:
                     expanded_ids.add(ent_id)
-            iterator += 1
+            for i in range(item.childCount()):
+                cache_expanded(item.child(i))
+
+        for i in range(self.tree_widget.topLevelItemCount()):
+            cache_expanded(self.tree_widget.topLevelItem(i))
 
         self.tree_widget.clear()
-        
         items_map: Dict[int, QTreeWidgetItem] = {}
         
         dir_icon = self.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon)
@@ -163,14 +179,19 @@ class HierarchyPanelView(BasePanel):
         self.tree_widget.setCurrentItem(None)
         
         if idx >= 0:
-            iterator = QTreeWidgetItemIterator(self.tree_widget)
-            while iterator.value():
-                item = iterator.value()
+            def find_and_select(item: QTreeWidgetItem) -> bool:
                 if item.data(0, Qt.UserRole) == idx:
                     self.tree_widget.setCurrentItem(item)
                     item.setSelected(True)
+                    return True
+                for i in range(item.childCount()):
+                    if find_and_select(item.child(i)):
+                        return True
+                return False
+
+            for i in range(self.tree_widget.topLevelItemCount()):
+                if find_and_select(self.tree_widget.topLevelItem(i)):
                     break
-                iterator += 1
                 
         self.tree_widget.blockSignals(False)
         self._is_updating_externally = False

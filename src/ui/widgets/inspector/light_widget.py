@@ -46,7 +46,6 @@ class LightWidget(BaseComponentWidget):
         flp.addRow("Intensity:", self.sp_light_int)
         self.layout.addLayout(flp)
 
-        # --- LIGHT COLOR MODE ---
         row_l_mode = QHBoxLayout()
         row_l_mode.addWidget(QLabel("Color Mode:"))
         self.cmb_light_mode = QComboBox()
@@ -120,19 +119,19 @@ class LightWidget(BaseComponentWidget):
 
     def update_data(self, ld: Dict[str, Any], mesh_visible: bool) -> None:
         self.cmb_light_type.blockSignals(True)
-        self.cmb_light_type.setCurrentIndex(["Directional", "Point", "Spot"].index(ld["type"]) if ld["type"] in ["Directional", "Point", "Spot"] else 1)
+        self.cmb_light_type.setCurrentIndex(["Directional", "Point", "Spot"].index(ld["type"]) if ld.get("type") in ["Directional", "Point", "Spot"] else 1)
         self.cmb_light_type.blockSignals(False)
         
-        self.w_light_dir.setVisible(ld["type"] in ["Directional", "Spot"])
-        self.w_light_spot.setVisible(ld["type"] == "Spot")
-        self.sun_hud_container.setVisible(ld["type"] == "Directional")
+        self.w_light_dir.setVisible(ld.get("type") in ["Directional", "Spot"])
+        self.w_light_spot.setVisible(ld.get("type") == "Spot")
+        self.sun_hud_container.setVisible(ld.get("type") == "Directional")
 
         self.chk_light_on.blockSignals(True)
-        self.chk_light_on.setChecked(ld["on"])
+        self.chk_light_on.setChecked(ld.get("on", True))
         self.chk_light_on.blockSignals(False)
         
         self.chk_light_proxy.blockSignals(True)
-        if ld["type"] == "Directional":
+        if ld.get("type") == "Directional":
             self.chk_light_proxy.setChecked(False)
             self.chk_light_proxy.setEnabled(False)
             self.chk_light_proxy.setText("Hidden (No Proxy)")
@@ -145,39 +144,39 @@ class LightWidget(BaseComponentWidget):
         self.sp_light_int.setValue(ld.get("intensity", DEFAULT_LIGHT_INTENSITY))
         
         self.cmb_light_mode.blockSignals(True)
-        self.cmb_light_mode.setCurrentIndex(1 if ld.get("use_adv", False) else 0)
+        self.cmb_light_mode.setCurrentIndex(1 if ld.get("use_advanced_mode", False) else 0)
         self.cmb_light_mode.blockSignals(False)
         
-        self.w_l_basic.setVisible(not ld.get("use_adv", False))
-        self.w_l_adv.setVisible(ld.get("use_adv", False))
+        self.w_l_basic.setVisible(not ld.get("use_advanced_mode", False))
+        self.w_l_adv.setVisible(ld.get("use_advanced_mode", False))
 
-        self.sp_l_amb.setValue(ld.get("amb_s", DEFAULT_LIGHT_AMBIENT))
-        self.sp_l_diff.setValue(ld.get("diff_s", DEFAULT_LIGHT_DIFFUSE))
-        self.sp_l_spec.setValue(ld.get("spec_s", DEFAULT_LIGHT_SPECULAR))
+        self.sp_l_amb.setValue(ld.get("ambient_strength", DEFAULT_LIGHT_AMBIENT))
+        self.sp_l_diff.setValue(ld.get("diffuse_strength", DEFAULT_LIGHT_DIFFUSE))
+        self.sp_l_spec.setValue(ld.get("specular_strength", DEFAULT_LIGHT_SPECULAR))
 
-        set_vec3_spinboxes(self.sp_light_base_vec, ld.get("base_c", list(DEFAULT_LIGHT_COLOR)))
-        set_vec3_spinboxes(self.sp_light_amb_vec, ld.get("amb_c", list(DEFAULT_LIGHT_COLOR)))
-        set_vec3_spinboxes(self.sp_light_diff_vec, ld.get("diff_c", list(DEFAULT_LIGHT_COLOR)))
-        set_vec3_spinboxes(self.sp_light_spec_vec, ld.get("spec_c", list(DEFAULT_LIGHT_COLOR)))
+        set_vec3_spinboxes(self.sp_light_base_vec, ld.get("color", list(DEFAULT_LIGHT_COLOR)))
+        set_vec3_spinboxes(self.sp_light_amb_vec, ld.get("explicit_ambient", list(DEFAULT_LIGHT_COLOR)))
+        set_vec3_spinboxes(self.sp_light_diff_vec, ld.get("explicit_diffuse", list(DEFAULT_LIGHT_COLOR)))
+        set_vec3_spinboxes(self.sp_light_spec_vec, ld.get("explicit_specular", list(DEFAULT_LIGHT_COLOR)))
 
-        self.btn_light_base.setStyleSheet(rgb_to_hex(ld.get("base_c", list(DEFAULT_LIGHT_COLOR))))
-        self.btn_l_amb_c.setStyleSheet(rgb_to_hex(ld.get("amb_c", list(DEFAULT_LIGHT_COLOR))))
-        self.btn_l_diff_c.setStyleSheet(rgb_to_hex(ld.get("diff_c", list(DEFAULT_LIGHT_COLOR))))
-        self.btn_l_spec_c.setStyleSheet(rgb_to_hex(ld.get("spec_c", list(DEFAULT_LIGHT_COLOR))))
+        self.btn_light_base.setStyleSheet(rgb_to_hex(ld.get("color", list(DEFAULT_LIGHT_COLOR))))
+        self.btn_l_amb_c.setStyleSheet(rgb_to_hex(ld.get("explicit_ambient", list(DEFAULT_LIGHT_COLOR))))
+        self.btn_l_diff_c.setStyleSheet(rgb_to_hex(ld.get("explicit_diffuse", list(DEFAULT_LIGHT_COLOR))))
+        self.btn_l_spec_c.setStyleSheet(rgb_to_hex(ld.get("explicit_specular", list(DEFAULT_LIGHT_COLOR))))
 
-        if ld["type"] == "Spot":
-            self.sp_light_cut.setValue(math.degrees(math.acos(max(-1.0, min(1.0, ld.get("cut", math.cos(math.radians(DEFAULT_SPOT_INNER_ANGLE))))))))
-            self.sp_light_out.setValue(math.degrees(math.acos(max(-1.0, min(1.0, ld.get("out", math.cos(math.radians(DEFAULT_SPOT_OUTER_ANGLE))))))))
+        if ld.get("type") == "Spot":
+            self.sp_light_cut.setValue(math.degrees(math.acos(max(-1.0, min(1.0, ld.get("cutOff", math.cos(math.radians(DEFAULT_SPOT_INNER_ANGLE))))))))
+            self.sp_light_out.setValue(math.degrees(math.acos(max(-1.0, min(1.0, ld.get("outerCutOff", math.cos(math.radians(DEFAULT_SPOT_OUTER_ANGLE))))))))
 
         self.fast_update(ld)
         
-        self.w_light_atten.setVisible(ld["type"] in ["Point", "Spot"])
-        self.sp_l_const.setValue(ld.get("const", DEFAULT_LIGHT_CONSTANT))
-        self.sp_l_lin.setValue(ld.get("lin", DEFAULT_LIGHT_LINEAR))
-        self.sp_l_quad.setValue(ld.get("quad", DEFAULT_LIGHT_QUADRATIC))
+        self.w_light_atten.setVisible(ld.get("type") in ["Point", "Spot"])
+        self.sp_l_const.setValue(ld.get("constant", DEFAULT_LIGHT_CONSTANT))
+        self.sp_l_lin.setValue(ld.get("linear", DEFAULT_LIGHT_LINEAR))
+        self.sp_l_quad.setValue(ld.get("quadratic", DEFAULT_LIGHT_QUADRATIC))
 
     def fast_update(self, ld: Dict[str, Any]) -> None:
-        if not ld or ld["type"] not in ["Directional", "Spot"]: return
+        if not ld or ld.get("type") not in ["Directional", "Spot"]: return
         self.sp_light_yaw.setValue(ld.get("yaw", 0.0))
         self.sp_light_pitch.setValue(ld.get("pitch", 0.0))
 
@@ -242,16 +241,35 @@ class LightWidget(BaseComponentWidget):
         from src.app import ctx
         data = ctx.engine.get_selected_entity_data()
         if not data or not data.get("light"): return
-        curr_c = data["light"].get(f"{c_type}_c", list(DEFAULT_LIGHT_COLOR))
+        
+        prop_map = {
+            'base': 'color', 
+            'amb': 'explicit_ambient', 
+            'diff': 'explicit_diffuse', 
+            'spec': 'explicit_specular'
+        }
+        prop_name = prop_map.get(c_type)
+        if not prop_name: return
+
+        curr_c = data["light"].get(prop_name, list(DEFAULT_LIGHT_COLOR))
         new_c = self._pick_color_with_dialog(curr_c)
         
         if new_c is not None and self._controller:
             self.request_undo_snapshot()
-            prop_map = {'base': 'color', 'amb': 'explicit_ambient', 'diff': 'explicit_diffuse', 'spec': 'explicit_specular'}
-            self._controller.set_property("Light", prop_map[c_type], new_c)
+            self._controller.set_property("Light", prop_name, new_c)
             
-            vec_map = {'base': self.sp_light_base_vec, 'amb': self.sp_light_amb_vec, 'diff': self.sp_light_diff_vec, 'spec': self.sp_light_spec_vec}
-            btn_map = {'base': self.btn_light_base, 'amb': self.btn_l_amb_c, 'diff': self.btn_l_diff_c, 'spec': self.btn_l_spec_c}
+            vec_map = {
+                'base': self.sp_light_base_vec, 
+                'amb': self.sp_light_amb_vec, 
+                'diff': self.sp_light_diff_vec, 
+                'spec': self.sp_light_spec_vec
+            }
+            btn_map = {
+                'base': self.btn_light_base, 
+                'amb': self.btn_l_amb_c, 
+                'diff': self.btn_l_diff_c, 
+                'spec': self.btn_l_spec_c
+            }
             
             set_vec3_spinboxes(vec_map[c_type], new_c)
             btn_map[c_type].setStyleSheet(rgb_to_hex(new_c))

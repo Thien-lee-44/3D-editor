@@ -1,84 +1,35 @@
 import glm
-from typing import List, Dict, Any
+import copy
+from typing import List, Dict, Any, Optional
 
 class Keyframe:
     """
-    Represents a discrete snapshot of an entity's component states at a specific point in time.
-    Capable of storing Transform, Mesh, Light, and Camera parameters for interpolation.
+    Represents a discrete snapshot of an entity's state at a specific point in time.
+    State bag is purely populated via Component native to_dict() serialization, 
+    making it implicitly JSON-compatible and completely DRY.
     """
     def __init__(self, time: float) -> None:
         self.time: float = time
-        self.has_transform: bool = False
-        self.position: glm.vec3 = glm.vec3(0.0)
-        self.rotation: glm.quat = glm.quat(1.0, 0.0, 0.0, 0.0)
-        self.scale: glm.vec3 = glm.vec3(1.0)
-        
-        self.has_mesh: bool = False
-        self.mesh_visible: bool = True
-        
-        self.has_light: bool = False
-        self.light_on: bool = True
-        self.light_intensity: float = 1.0
-        self.light_color: glm.vec3 = glm.vec3(1.0)
-        
-    def set_transform(self, pos: glm.vec3, rot: glm.quat, scale: glm.vec3) -> None:
-        """Records the spatial configuration of the entity."""
-        self.has_transform = True
-        self.position = glm.vec3(pos)
-        self.rotation = glm.quat(rot)
-        self.scale = glm.vec3(scale)
-        
-    def set_mesh(self, visible: bool) -> None:
-        """Records the rendering state of the associated mesh."""
-        self.has_mesh = True
-        self.mesh_visible = visible
-        
-    def set_light(self, on: bool, intensity: float, color: glm.vec3) -> None:
-        """Records the illumination parameters of the associated light source."""
-        self.has_light = True
-        self.light_on = on
-        self.light_intensity = intensity
-        self.light_color = glm.vec3(color)
+        self.state: Dict[str, Dict[str, Any]] = {}
+
+    def clone(self) -> 'Keyframe':
+        """Creates a deep copy of this keyframe state for duplication."""
+        new_kf = Keyframe(self.time)
+        new_kf.state = copy.deepcopy(self.state)
+        return new_kf
 
     def serialize(self) -> Dict[str, Any]:
-        """Packages the keyframe data into a JSON-compatible dictionary."""
-        data: Dict[str, Any] = {"time": self.time}
-        if self.has_transform:
-            data["transform"] = {
-                "pos": [self.position.x, self.position.y, self.position.z], 
-                "rot": [self.rotation.w, self.rotation.x, self.rotation.y, self.rotation.z], 
-                "scale": [self.scale.x, self.scale.y, self.scale.z]
-            }
-        if self.has_mesh:
-            data["mesh"] = {"visible": self.mesh_visible}
-        if self.has_light:
-            data["light"] = {
-                "on": self.light_on, 
-                "intensity": self.light_intensity, 
-                "color": [self.light_color.x, self.light_color.y, self.light_color.z]
-            }
-        return data
+        """Packages the keyframe data natively."""
+        return {
+            "time": self.time, 
+            "state": copy.deepcopy(self.state)
+        }
 
     @staticmethod
     def deserialize(data: Dict[str, Any]) -> 'Keyframe':
-        """Reconstructs a Keyframe instance from a JSON payload."""
+        """Reconstructs a Keyframe instance directly from a native dictionary."""
         kf = Keyframe(data.get("time", 0.0))
-        if "transform" in data:
-            t_data = data["transform"]
-            kf.set_transform(
-                glm.vec3(*t_data.get("pos", [0.0, 0.0, 0.0])), 
-                glm.quat(*t_data.get("rot", [1.0, 0.0, 0.0, 0.0])), 
-                glm.vec3(*t_data.get("scale", [1.0, 1.0, 1.0]))
-            )
-        if "mesh" in data:
-            kf.set_mesh(data["mesh"].get("visible", True))
-        if "light" in data:
-            l_data = data["light"]
-            kf.set_light(
-                l_data.get("on", True), 
-                l_data.get("intensity", 1.0), 
-                glm.vec3(*l_data.get("color", [1.0, 1.0, 1.0]))
-            )
+        kf.state = copy.deepcopy(data.get("state", {}))
         return kf
 
 
@@ -94,15 +45,13 @@ class AnimationComponent:
         self.duration: float = 0.0
         self.loop: bool = False
         
-        # UI Tracking State for Auto-Keying workflow
         self.active_keyframe_index: int = -1 
-        
-        # Legacy Kinematic state
         self.velocity: glm.vec3 = glm.vec3(0.0)
         self.angular_velocity: glm.vec3 = glm.vec3(0.0)
         
-        # Initialize anchor keyframe
-        self.add_keyframe(Keyframe(0.0))
+        # Temporary RAM cache for the Base State (t=0). 
+        # NOT saved to JSON. Used dynamically by Animator during playback.
+        self._base_state_cache: Dict[str, Dict[str, Any]] = {}
 
     def add_keyframe(self, keyframe: Keyframe) -> None:
         self.keyframes.append(keyframe)
@@ -111,15 +60,33 @@ class AnimationComponent:
     def remove_keyframe(self, index: int) -> None:
         if 0 <= index < len(self.keyframes):
             self.keyframes.pop(index)
-            self.active_keyframe_index = -1 
+            self.active_keyframe_index = -1 if not self.keyframes else 0
+            self._sort_and_update_duration()
+
+    def get_keyframe(self, index: int) -> Optional[Keyframe]:
+        if 0 <= index < len(self.keyframes):
+            return self.keyframes[index]
+        return None
+
+    def set_keyframe_time(self, index: int, new_time: float) -> None:
+        if 0 <= index < len(self.keyframes):
+            self.keyframes[index].time = new_time
             self._sort_and_update_duration()
 
     def _sort_and_update_duration(self) -> None:
         if not self.keyframes:
             self.duration = 0.0
             return
+            
+        active_kf = None
+        if hasattr(self, 'active_keyframe_index') and 0 <= self.active_keyframe_index < len(self.keyframes):
+            active_kf = self.keyframes[self.active_keyframe_index]
+            
         self.keyframes.sort(key=lambda k: k.time)
         self.duration = self.keyframes[-1].time
+        
+        if active_kf in self.keyframes:
+            self.active_keyframe_index = self.keyframes.index(active_kf)
 
     def serialize(self) -> Dict[str, Any]:
         return {
@@ -140,9 +107,13 @@ class AnimationComponent:
         kf_data = data.get("keyframes", [])
         if kf_data:
             self.keyframes = [Keyframe.deserialize(k) for k in kf_data]
+            if self.keyframes:
+                self.active_keyframe_index = 0
         else:
-            self.keyframes = [Keyframe(0.0)]
+            self.keyframes = []
             
         self._sort_and_update_duration()
         self.velocity = glm.vec3(*data.get("vel", [0.0, 0.0, 0.0]))
         self.angular_velocity = glm.vec3(*data.get("ang_vel", [0.0, 0.0, 0.0]))
+        
+        self._base_state_cache = {}

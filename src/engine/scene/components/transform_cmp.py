@@ -16,6 +16,8 @@ class TransformComponent(Transform, Component):
     def __init__(self) -> None:
         Transform.__init__(self)
         Component.__init__(self)
+        # [CONSTRAINT GUARD]: Structural definition for locked spatial properties.
+        self.locked_axes: Dict[str, bool] = {"pos": False, "rot": False, "scl": False}
 
     def get_matrix(self) -> glm.mat4:
         """
@@ -23,10 +25,28 @@ class TransformComponent(Transform, Component):
         Multiplies the local matrix by the parent's global matrix to inherit spatial state.
         """
         local_mat = super().get_matrix()
+        
         if self.entity and self.entity.parent:
             parent_tf = self.entity.parent.get_component(TransformComponent)
             if parent_tf: 
-                return parent_tf.get_matrix() * local_mat
+                p_mat = parent_tf.get_matrix()
+                
+                # [SCALE GUARD]: If scale is locked (e.g. Proxies, Cameras, Lights), 
+                # inherit Position and Rotation from the parent group, but discard Parent's Scale.
+                if self.locked_axes.get('scl', False):
+                    # 1. Calculate correct world position (affected by parent's scale)
+                    global_mat = p_mat * local_mat
+                    pos = glm.vec3(global_mat[3])
+                    
+                    # 2. Calculate pure world rotation (ignoring any non-uniform scale distortion from parent)
+                    global_quat = parent_tf.global_quat_rot * self.quat_rot
+                    
+                    # 3. Rebuild the final matrix using ONLY the local scale
+                    return glm.translate(glm.mat4(1.0), pos) * glm.mat4_cast(global_quat) * glm.scale(glm.mat4(1.0), self.scale)
+                
+                # Standard inheritance for standard meshes
+                return p_mat * local_mat
+                
         return local_mat
 
     @property
@@ -107,19 +127,29 @@ class TransformComponent(Transform, Component):
             
         self.rotation = glm.degrees(glm.eulerAngles(self.quat_rot))
 
-    def to_dict(self) -> Dict[str, List[float]]:
-        """Serializes the local transform state for saving to disk."""
+    def to_dict(self) -> Dict[str, Any]:
+        """Serializes the local transform state using exact class variable names."""
         return {
-            "pos": [self.position.x, self.position.y, self.position.z],
-            "rot": [self.rotation.x, self.rotation.y, self.rotation.z],
-            "scl": [self.scale.x, self.scale.y, self.scale.z]
+            "position": [self.position.x, self.position.y, self.position.z],
+            "rotation": [self.rotation.x, self.rotation.y, self.rotation.z],
+            "scale": [self.scale.x, self.scale.y, self.scale.z],
+            "quat_rot": [self.quat_rot.w, self.quat_rot.x, self.quat_rot.y, self.quat_rot.z],
+            "locked_axes": self.locked_axes
         }
 
-    def from_dict(self, data: Dict[str, List[float]]) -> None:
-        """Deserializes transform state from loaded JSON payload."""
-        self.position = glm.vec3(*data.get("pos", list(DEFAULT_SPAWN_POSITION)))
-        self.rotation = glm.vec3(*data.get("rot", list(DEFAULT_SPAWN_ROTATION)))
-        self.scale = glm.vec3(*data.get("scl", list(DEFAULT_SPAWN_SCALE)))
-        self.quat_rot = glm.quat(glm.radians(self.rotation))
+    def from_dict(self, data: Dict[str, Any]) -> None:
+        """Deserializes transform state from exact JSON keys."""
+        self.position = glm.vec3(*data.get("position", list(DEFAULT_SPAWN_POSITION)))
+        self.rotation = glm.vec3(*data.get("rotation", list(DEFAULT_SPAWN_ROTATION)))
+        self.scale = glm.vec3(*data.get("scale", list(DEFAULT_SPAWN_SCALE)))
+        
+        if "quat_rot" in data:
+            self.quat_rot = glm.quat(*data["quat_rot"])
+        else:
+            self.quat_rot = glm.quat(glm.radians(self.rotation))
+
+        if "locked_axes" in data:
+            self.locked_axes = data["locked_axes"]
+            
         if hasattr(self, 'sync_from_gui'):
             self.sync_from_gui()

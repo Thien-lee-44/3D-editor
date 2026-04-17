@@ -1,44 +1,39 @@
 from src.app import ctx, AppEvent
 from src.ui.error_handler import safe_execute
 from src.ui.views.panels.timeline_view import TimelinePanelView
-from src.engine.scene.components.animation_cmp import AnimationComponent
 
 class TimelineController:
     """
-    Orchestrates the global playback state and synchronizes the UI timeline 
-    with the underlying Engine's AnimatorSystem.
+    Manages the global timeline, playback state, and synchronization between 
+    the dope sheet UI and the animation engine.
     """
     def __init__(self) -> None:
         self.view = TimelinePanelView(controller=self)
-        
         self.is_updating_ui: bool = False
         self.current_time: float = 0.0
         self.is_playing: bool = False
         self.generator_ctrl = None
+        
+        self.selected_kf_idx: int = -1
+        self.current_entity_id: int = -1
 
         ctx.events.subscribe(AppEvent.ENTITY_SELECTED, self._on_entity_selected)
         ctx.events.subscribe(AppEvent.SCENE_CHANGED, self._refresh_dope_sheet)
 
     @safe_execute(context="Select Keyframe")
     def select_keyframe(self, index: int) -> None:
-        """Sets the active keyframe for direct parameter overriding."""
-        ent_id = ctx.engine.get_selected_entity_id()
-        if ent_id < 0: return
+        self.selected_kf_idx = index
+        target_time = ctx.engine.set_active_keyframe(index)
         
-        ent = ctx.engine.scene.entities[ent_id]
-        anim = ent.get_component(AnimationComponent)
-        
-        if anim:
-            anim.active_keyframe_index = index
-            if 0 <= index < len(anim.keyframes):
-                target_time = anim.keyframes[index].time
-                self.set_time(target_time)
+        if index >= 0 and abs(self.current_time - target_time) > 0.001:
+            self.set_time(target_time)
+            
+        ctx.events.emit(AppEvent.COMPONENT_PROPERTY_CHANGED) 
 
     @safe_execute(context="Toggle Playback")
     def toggle_playback(self, is_playing: bool) -> None:
         self.is_playing = is_playing
         if is_playing:
-            # Drop auto-keying focus for safety during playback
             self.select_keyframe(-1)
             self.view.deselect_keyframe_ui()
 
@@ -49,6 +44,11 @@ class TimelineController:
         
         if hasattr(ctx.engine, 'animator'):
             ctx.engine.animator.evaluate(self.current_time, 0.0)
+            
+            # Allow live visual updates of the inspector while scrubbing
+            if not self.is_playing:
+                ctx.events.emit(AppEvent.COMPONENT_PROPERTY_CHANGED)
+                
             ctx.events.emit(AppEvent.SCENE_CHANGED)
 
     @safe_execute(context="Add Keyframe")
@@ -58,52 +58,44 @@ class TimelineController:
     @safe_execute(context="Add Keyframe At Time")
     def add_keyframe_at_time(self, time: float) -> None:
         ctx.events.emit(AppEvent.ACTION_BEFORE_MUTATION)
-        ctx.engine.set_component_property("Animation", "ADD_KEYFRAME", time)
+        
+        new_idx = ctx.engine.add_and_focus_keyframe(time)
         self._refresh_dope_sheet()
-        ctx.events.emit(AppEvent.ENTITY_SELECTED, ctx.engine.get_selected_entity_id())
+        
+        if new_idx >= 0:
+            self.selected_kf_idx = new_idx
+            self.view.track.selected_kf_index = new_idx
+            self.view.track.update()
+            
+        ctx.events.emit(AppEvent.COMPONENT_PROPERTY_CHANGED)
         ctx.events.emit(AppEvent.SCENE_CHANGED)
 
     @safe_execute(context="Move Keyframe")
     def move_keyframe(self, index: int, new_time: float) -> None:
-        ent_id = ctx.engine.get_selected_entity_id()
-        if ent_id < 0: return
-        
-        ent = ctx.engine.scene.entities[ent_id]
-        anim = ent.get_component(AnimationComponent)
-        if not anim or index < 0 or index >= len(anim.keyframes): return
-        
         ctx.events.emit(AppEvent.ACTION_BEFORE_MUTATION)
-        
-        kf_target = anim.keyframes[index]
-        kf_target.time = new_time
-        
-        if hasattr(anim, '_sort_and_update_duration'):
-            anim._sort_and_update_duration()
-            
+        ctx.engine.set_component_property("Animation", "MOVE_KEYFRAME", {"index": index, "time": new_time})
         self._refresh_dope_sheet()
-        ctx.events.emit(AppEvent.ENTITY_SELECTED, ent_id)
+        
+        if hasattr(ctx.engine, 'animator'):
+            ctx.engine.animator.evaluate(self.current_time, 0.0)
+            
+        ctx.events.emit(AppEvent.COMPONENT_PROPERTY_CHANGED)
         ctx.events.emit(AppEvent.SCENE_CHANGED)
 
     @safe_execute(context="Clear Keyframes")
     def clear_keyframes(self) -> None:
         ctx.events.emit(AppEvent.ACTION_BEFORE_MUTATION)
         ctx.engine.set_component_property("Animation", "CLEAR_KEYFRAMES", None)
-        
-        ent_id = ctx.engine.get_selected_entity_id()
-        if ent_id >= 0:
-            ent = ctx.engine.scene.entities[ent_id]
-            anim = ent.get_component(AnimationComponent)
-            if anim:
-                from src.engine.scene.components.animation_cmp import Keyframe
-                anim.add_keyframe(Keyframe(0.0))
-                
         self._refresh_dope_sheet()
-        ctx.events.emit(AppEvent.ENTITY_SELECTED, ctx.engine.get_selected_entity_id())
+        
+        if hasattr(ctx.engine, 'animator'):
+            ctx.engine.animator.evaluate(self.current_time, 0.0)
+            ctx.events.emit(AppEvent.COMPONENT_PROPERTY_CHANGED)
+            
         ctx.events.emit(AppEvent.SCENE_CHANGED)
 
     @safe_execute(context="Open Render Settings")
     def open_render_settings(self) -> None:
-        """Instantiates and presents the floating Data Generator dialog."""
         if self.generator_ctrl is None:
             from src.ui.controllers.generator_ctrl import GeneratorController
             self.generator_ctrl = GeneratorController()
@@ -111,19 +103,10 @@ class TimelineController:
 
     def advance_time(self, dt: float) -> None:
         if not self.is_playing:
-            # =================================================================
-            # [CRITICAL FIX]: VIEWPORT AUTO-KEYING SYNCHRONIZATION
-            # Even when playback is paused, if an entity is in Edit Mode 
-            # (a keyframe is selected), we must explicitly wake up the Animator 
-            # so it can poll and bake real-time Viewport Gizmo manipulations.
-            # =================================================================
-            ent_id = ctx.engine.get_selected_entity_id()
-            if ent_id >= 0:
-                ent = ctx.engine.scene.entities[ent_id]
-                anim = ent.get_component(AnimationComponent)
-                if anim and hasattr(anim, 'active_keyframe_index') and anim.active_keyframe_index >= 0:
-                    if hasattr(ctx.engine, 'animator'):
-                        ctx.engine.animator.evaluate(self.current_time, 0.0)
+            info = ctx.engine.get_animation_info()
+            if info.get("active_idx", -1) >= 0:
+                if hasattr(ctx.engine, 'animator'):
+                    ctx.engine.animator.evaluate(self.current_time, 0.0)
             return
             
         self.current_time += dt
@@ -139,19 +122,35 @@ class TimelineController:
             ctx.events.emit(AppEvent.SCENE_CHANGED)
 
     def _on_entity_selected(self, entity_id: int) -> None:
+        # CRITICAL FIX: Prevent viewport click-and-drag from resetting the timeline
+        if self.current_entity_id == entity_id:
+            return 
+            
+        self.current_entity_id = entity_id
+        
+        # Snap time to origin and focus Base State exclusively on newly selected entity
+        if not self.is_playing:
+            self.set_time(0.0)
+            self.select_keyframe(0) # 0 is the UI index for Base State
+        else:
+            self.select_keyframe(-1)
+            
         self._refresh_dope_sheet()
         
+        if hasattr(ctx.engine, 'animator') and not self.is_updating_ui:
+            ctx.engine.animator.evaluate(self.current_time, 0.0)
+            ctx.events.emit(AppEvent.COMPONENT_PROPERTY_CHANGED)
+        
     def _refresh_dope_sheet(self) -> None:
-        ent_id = ctx.engine.get_selected_entity_id()
-        if ent_id < 0:
+        info = ctx.engine.get_animation_info()
+        
+        if not info:
             self.view.update_keyframes_display([], "")
             return
             
-        ent = ctx.engine.scene.entities[ent_id]
-        anim = ent.get_component(AnimationComponent)
+        self.view.update_keyframes_display(info.get("times", []), "")
         
-        if anim and anim.keyframes:
-            times = [k.time for k in anim.keyframes]
-            self.view.update_keyframes_display(times, ent.name)
-        else:
-            self.view.update_keyframes_display([], ent.name)
+        if self.selected_kf_idx != info.get("active_idx", -1):
+            self.selected_kf_idx = info.get("active_idx", -1)
+            self.view.track.selected_kf_index = self.selected_kf_idx
+            self.view.track.update()

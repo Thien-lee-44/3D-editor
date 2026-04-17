@@ -4,10 +4,8 @@ from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QMouseEvent
 from typing import Optional
 
-from src.app import ctx
+from src.app import ctx, AppEvent
 from src.ui.controllers.viewport_ctrl import ViewportController
-
-# Import centralized HUD sizing
 from src.app.config import SUN_HUD_MIN_HEIGHT
 
 class SunHUDWidget(QOpenGLWidget):
@@ -22,37 +20,22 @@ class SunHUDWidget(QOpenGLWidget):
         self.setMouseTracking(True)
         self.setMinimumHeight(SUN_HUD_MIN_HEIGHT) 
         
-        # Instantiate an isolated Controller specifically to capture interactions within this widget
         self._controller = ViewportController(is_hud=True)
         
-        # The HUD requires a constant framerate for continuous arcball redrawing (effectively unlocking the render loop)
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.update)
         self.timer.start(0)
 
-    # =========================================================================
-    # OPENGL LIFECYCLE EVENTS (Communicates with the Engine via global ctx)
-    # =========================================================================
-
     def initializeGL(self) -> None:
-        """Initializes the specific hardware state machine needed for the HUD."""
         ctx.engine.init_hud_gl()
 
     def paintGL(self) -> None:
-        """
-        Executes the specialized HUD render pass. 
-        Delegates to the engine to highlight the rotational axis currently being hovered over.
-        """
         ctx.engine.render_sun_hud(
             self.width(), 
             self.height(), 
             self._controller.active_axis, 
             self.underMouse()
         )
-
-    # =========================================================================
-    # MOUSE EVENT HANDLING (Delegated to isolated Controller logic)
-    # =========================================================================
 
     def mousePressEvent(self, e: QMouseEvent) -> None: 
         self.makeCurrent()
@@ -79,4 +62,26 @@ class SunHUDWidget(QOpenGLWidget):
             self.width(), 
             self.height()
         )
+        
+        if e.buttons() & Qt.LeftButton:
+            timeline = getattr(ctx.main_window._controller, 'timeline_ctrl', None) if hasattr(ctx, 'main_window') else None
+            curr_time = timeline.current_time if timeline else 0.0
+            
+            is_new_kf, target_time = ctx.engine.sync_gizmo_to_keyframe(curr_time)
+            
+            if timeline:
+                if is_new_kf:
+                    timeline._refresh_dope_sheet()
+                if abs(timeline.current_time - target_time) > 0.001:
+                    timeline.set_time(target_time)
+                elif hasattr(ctx.engine, 'animator'):
+                    ctx.engine.animator.evaluate(target_time, 0.0)
+            elif hasattr(ctx.engine, 'animator'):
+                ctx.engine.animator.evaluate(target_time, 0.0)
+                
+            ctx.events.emit(AppEvent.SCENE_CHANGED)
+            
+            # CRITICAL FIX: Force inspector to refresh its UI sliders to match the new SunHUD live values
+            ctx.events.emit(AppEvent.COMPONENT_PROPERTY_CHANGED)
+            
         self.doneCurrent()
