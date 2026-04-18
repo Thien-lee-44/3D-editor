@@ -1,7 +1,7 @@
 from typing import Any, Dict
 from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QFormLayout, 
                                QGroupBox, QLabel, QSpinBox, QDoubleSpinBox, 
-                               QLineEdit, QPushButton)
+                               QLineEdit, QPushButton, QCheckBox)
 from PySide6.QtCore import Qt
 
 from src.app.config import DEFAULT_UI_MARGIN, DEFAULT_UI_SPACING
@@ -15,7 +15,7 @@ class GeneratorDialogView(QDialog):
         super().__init__()
         self._controller = controller
         self.setWindowTitle("Synthetic Data Generator")
-        self.setMinimumWidth(450)
+        self.setMinimumWidth(480)
         
         # Ensure the dialog floats above the main window
         self.setWindowFlags(self.windowFlags() | Qt.WindowStaysOnTopHint)
@@ -35,20 +35,25 @@ class GeneratorDialogView(QDialog):
         form.setContentsMargins(DEFAULT_UI_MARGIN, 10, DEFAULT_UI_MARGIN, DEFAULT_UI_MARGIN)
         form.setSpacing(DEFAULT_UI_SPACING)
 
-        # 1. Output Path
+        # 1. Output Path (Now Optional)
         path_layout = QHBoxLayout()
         path_layout.setContentsMargins(0, 0, 0, 0)
         
         self.txt_dir = QLineEdit()
-        self.txt_dir.setPlaceholderText("Select output directory...")
+        self.txt_dir.setPlaceholderText("Leave empty for default (datasets/export_...)")
         self.txt_dir.setReadOnly(True)
         
         self.btn_browse = QPushButton("Browse")
         self.btn_browse.setCursor(Qt.PointingHandCursor)
         self.btn_browse.clicked.connect(self._request_browse)
         
+        self.btn_clear = QPushButton("Clear")
+        self.btn_clear.setCursor(Qt.PointingHandCursor)
+        self.btn_clear.clicked.connect(lambda: self.txt_dir.clear())
+        
         path_layout.addWidget(self.txt_dir)
         path_layout.addWidget(self.btn_browse)
+        path_layout.addWidget(self.btn_clear)
         form.addRow("Output Path:", path_layout)
 
         # 2. Resolution (Width x Height)
@@ -93,6 +98,12 @@ class GeneratorDialogView(QDialog):
         dur_layout.addWidget(self.btn_auto_dur)
         form.addRow("Duration (s):", dur_layout)
 
+        # 5. Domain Randomization [NEW]
+        self.chk_randomize = QCheckBox("Enable Domain Randomization (Lighting & Jitter)")
+        self.chk_randomize.setChecked(True)
+        self.chk_randomize.setToolTip("Adds noise to lighting and camera angles to prevent AI Overfitting.")
+        form.addRow("", self.chk_randomize)
+
         self.main_layout.addWidget(group)
 
     def _build_action_group(self) -> None:
@@ -123,11 +134,12 @@ class GeneratorDialogView(QDialog):
         fps = self.spn_fps.value()
         duration = self.spn_duration.value()
         return {
-            "output_dir": self.txt_dir.text(),
+            "output_dir": self.txt_dir.text().strip(),
             "res_w": self.spn_w.value(),
             "res_h": self.spn_h.value(),
             "num_frames": int(duration * fps),
-            "dt": 1.0 / fps
+            "dt": 1.0 / fps,
+            "use_randomization": self.chk_randomize.isChecked()
         }
         
     def set_directory(self, path: str) -> None:
@@ -138,11 +150,13 @@ class GeneratorDialogView(QDialog):
         
     def set_ui_locked(self, locked: bool) -> None:
         self.btn_browse.setEnabled(not locked)
+        self.btn_clear.setEnabled(not locked)
         self.spn_fps.setEnabled(not locked)
         self.spn_w.setEnabled(not locked)
         self.spn_h.setEnabled(not locked)
         self.spn_duration.setEnabled(not locked)
         self.btn_auto_dur.setEnabled(not locked)
+        self.chk_randomize.setEnabled(not locked)
         self.btn_start.setEnabled(not locked)
         
         if locked:

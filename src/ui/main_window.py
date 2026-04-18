@@ -125,7 +125,14 @@ class EditorMainWindow(QMainWindow):
             act = QAction(n, self)
             act.triggered.connect(lambda checked=False, name=n: self._controller.spawn_primitive(name, False))
             menu_3d.addAction(act)
-            
+        
+        menu_2d = menu_add.addMenu("2D Primitives")
+        for n in ctx.engine.get_2d_primitive_names():
+            act = QAction(n, self)
+            act.setData(n)
+            act.triggered.connect(lambda checked=False, name=n: self._controller.spawn_primitive(name, True))
+            menu_2d.addAction(act)
+        
         menu_add.addSeparator()
         menu_add.addAction("3D Math Surface").triggered.connect(
             lambda: (self.dock_math.show(), self.dock_math.raise_()) if self.dock_math else None

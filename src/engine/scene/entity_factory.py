@@ -216,6 +216,8 @@ class EntityFactory:
         """
         Parses a 3D asset and assembles a hierarchical structure.
         Automatically calculates the group center to align Gizmos with the collective children.
+        Optimized to reuse cached OpenGL BufferObjects directly, preventing memory leaks 
+        and fixing disappearing mesh bugs.
         """
         try:
             mesh_data_list = ResourceManager.get_model(path)
@@ -246,7 +248,9 @@ class EntityFactory:
             
             self._attach_animation(master_ent)
             master_track_id = self._attach_semantic(master_ent, class_id=0)
-            self.scene.add_entity(master_ent)
+            
+            # [CRITICAL FIX]: Collect all structured entities first before flushing to Scene
+            entities_to_add = [master_ent]
 
             for g_name, meshes in buckets.items():
                 obj_world_positions = [glm.vec3(*m.pivot_offset) for m in meshes if hasattr(m, 'pivot_offset')]
@@ -266,7 +270,7 @@ class EntityFactory:
                 obj_track_id = self._attach_semantic(obj_ent, class_id=0, track_id=master_track_id)
                 
                 master_ent.add_child(obj_ent, keep_world=False)
-                self.scene.add_entity(obj_ent)
+                entities_to_add.append(obj_ent)
 
                 for sub_data in meshes:
                     if is_multi_part:
@@ -278,29 +282,28 @@ class EntityFactory:
                         self._attach_semantic(child_ent, class_id=0, track_id=obj_track_id)
                         
                         renderer = child_ent.add_component(MeshRenderer())
-                        renderer.geometry = BufferObject(sub_data.vertices, sub_data.indices, vertex_size=sub_data.vertex_size)
-                        renderer.geometry.pivot_offset = sub_data.pivot_offset
                         
-                        renderer.geometry.filepath = path
-                        renderer.geometry.name = getattr(sub_data, 'name', '')
-                        renderer.geometry.render_mode = getattr(sub_data, 'render_mode', 0x0004)
+                        # [CRITICAL FIX]: Directly reference the cached Geometry.
+                        # Do NOT call BufferObject() here, as it duplicates RAM/VRAM and crashes GL State.
+                        renderer.geometry = sub_data 
                         
                         if hasattr(sub_data, 'materials') and 'default_active' in sub_data.materials:
                             renderer.material.setup_from_dict(sub_data.materials['default_active'])
                                 
                         obj_ent.add_child(child_ent, keep_world=False)
-                        self.scene.add_entity(child_ent)
+                        entities_to_add.append(child_ent)
                     else:
                         renderer = obj_ent.add_component(MeshRenderer())
-                        renderer.geometry = BufferObject(sub_data.vertices, sub_data.indices, vertex_size=sub_data.vertex_size)
-                        renderer.geometry.pivot_offset = sub_data.pivot_offset
                         
-                        renderer.geometry.filepath = path
-                        renderer.geometry.name = getattr(sub_data, 'name', '')
-                        renderer.geometry.render_mode = getattr(sub_data, 'render_mode', 0x0004)
+                        # [CRITICAL FIX]: Directly reference the cached Geometry.
+                        renderer.geometry = sub_data
                         
                         if hasattr(sub_data, 'materials') and 'default_active' in sub_data.materials:
                             renderer.material.setup_from_dict(sub_data.materials['default_active'])
+
+            # Dispatch all newly assembled entities to the Scene in a synchronized batch
+            for ent in entities_to_add:
+                self.scene.add_entity(ent)
 
             self.scene.selected_index = self.scene.entities.index(master_ent)
             

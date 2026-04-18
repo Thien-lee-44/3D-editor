@@ -46,16 +46,15 @@ class GeneratorController:
     @safe_execute(context="Dataset Generation")
     def handle_start_generation(self) -> None:
         settings = self.view.get_settings()
-        
-        if not settings["output_dir"]:
-            QMessageBox.warning(ctx.main_window, "Missing Path", "Please select an output directory first.")
-            return
 
         if self.generator_backend is None:
             self.generator_backend = SyntheticDataGenerator(ctx.engine)
 
         try:
-            self.generator_backend.setup_directories(settings["output_dir"])
+            # Delegate path resolution to the backend generator
+            target_dir = settings["output_dir"] if settings["output_dir"] else None
+            self.generator_backend.setup_directories(target_dir)
+            
             self.view.set_ui_locked(True)
             
             total_frames = settings["num_frames"]
@@ -70,29 +69,34 @@ class GeneratorController:
                 if progress.wasCanceled():
                     self.generator_backend.is_running = False
 
+            # Inject the generation payload into the OpenGL context if available
             if hasattr(ctx, 'main_window') and hasattr(ctx.main_window, 'gl_widget'):
                 ctx.main_window.gl_widget.makeCurrent()
                 self.generator_backend.generate_batch(
-                    total_frames, 
-                    settings["dt"],
-                    settings["res_w"],
-                    settings["res_h"],
-                    progress_callback
+                    num_frames=total_frames, 
+                    dt=settings["dt"],
+                    res_w=settings["res_w"],
+                    res_h=settings["res_h"],
+                    use_randomization=settings["use_randomization"],
+                    progress_cb=progress_callback
                 )
                 ctx.main_window.gl_widget.doneCurrent()
             else:
                 self.generator_backend.generate_batch(
-                    total_frames, 
-                    settings["dt"],
-                    settings["res_w"],
-                    settings["res_h"],
-                    progress_callback
+                    num_frames=total_frames, 
+                    dt=settings["dt"],
+                    res_w=settings["res_w"],
+                    res_h=settings["res_h"],
+                    use_randomization=settings["use_randomization"],
+                    progress_cb=progress_callback
                 )
             
             if progress.wasCanceled():
                 QMessageBox.warning(ctx.main_window, "Aborted", "Generation was cancelled by the user.")
             else:
-                QMessageBox.information(ctx.main_window, "Success", f"Successfully generated {total_frames} frames!\ndataset.yaml has been created.")
+                final_path = self.generator_backend.output_dir
+                msg = f"Successfully generated {total_frames} frames!\n\nSaved to:\n{final_path}"
+                QMessageBox.information(ctx.main_window, "Success", msg)
             
         except Exception as e:
             QMessageBox.critical(ctx.main_window, "Generation Error", str(e))

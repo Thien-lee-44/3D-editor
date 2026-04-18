@@ -32,8 +32,6 @@ class SceneManager:
 
     def __init__(self, scene: Any) -> None:
         self.scene = scene
-        
-        # Initialize specialized Sub-Managers
         self.serializer = SerializationManager(self.scene, self)
         self.hierarchy = HierarchyManager(self.scene, self)
         self.clipboard = ClipboardManager(self.scene, self)
@@ -49,14 +47,9 @@ class SceneManager:
     # CORE ENTITY MANAGEMENT
     # =========================================================================
     
-    def get_selected_entity_id(self) -> int: 
-        return self.scene.selected_index
-        
-    def select_entity(self, idx: int) -> None: 
-        self.scene.selected_index = idx
-        
-    def set_manipulation_mode(self, mode: str) -> None: 
-        self.scene.manipulation_mode = mode
+    def get_selected_entity_id(self) -> int: return self.scene.selected_index
+    def select_entity(self, idx: int) -> None: self.scene.selected_index = idx
+    def set_manipulation_mode(self, mode: str) -> None: self.scene.manipulation_mode = mode
         
     def get_scene_entities_list(self) -> List[Dict[str, Any]]:
         return [
@@ -132,7 +125,6 @@ class SceneManager:
             "tf": None, "mesh": None, "light": None, "cam": None, "anim": None, "semantic": None
         }
         
-        # [OPTIMIZATION]: Dynamic property extraction using mapping array
         comp_keys = {
             TransformComponent: "tf", MeshRenderer: "mesh", LightComponent: "light",
             CameraComponent: "cam", AnimationComponent: "anim", SemanticComponent: "semantic"
@@ -144,7 +136,6 @@ class SceneManager:
                 if hasattr(comp, 'to_dict'): data[dict_key] = comp.to_dict()
                 elif hasattr(comp, 'serialize'): data[dict_key] = comp.serialize()
 
-        # Special directional light rotation processing
         if data["light"] and data["tf"] and data["light"].get("type") in ["Directional", "Spot"]:
             import math
             tf = ent.get_component(TransformComponent)
@@ -168,7 +159,6 @@ class SceneManager:
         comp = ent.get_component(comp_class)
         if not comp: return
 
-        # Route to specialized Sub-Managers
         if comp_name == "Animation":
             self.animation.handle_animation_property(ent, comp, prop, value)
             return
@@ -176,7 +166,6 @@ class SceneManager:
             self.semantic.handle_semantic_property(ent, comp, prop, value)
             return
 
-        # Direct ECS mutation
         if comp_name == "Transform" and prop in ["position", "rotation", "scale"]:
             setattr(comp, prop, glm.vec3(*value))
             if prop == "rotation": comp.quat_rot = glm.quat(glm.radians(comp.rotation))
@@ -205,7 +194,61 @@ class SceneManager:
             if mesh and getattr(mesh, 'is_proxy', False): mesh.visible = is_visible
 
     # =========================================================================
-    # RESOURCE MANAGEMENT
+    # COMPUTER VISION DELEGATES (SYNTHETIC DATA)
+    # =========================================================================
+    
+    def get_debug_bboxes(self, width: int, height: int) -> List[Tuple[float, float, float, float]]:
+        """Returns a list of actively computed bounding boxes to be visualized in the viewport overlay."""
+        bboxes = []
+        active_camera = None
+        
+        for tf, cam, ent in self.scene.cached_cameras:
+            if getattr(cam, 'is_active', False):
+                active_camera = cam
+                break
+                
+        if not active_camera:
+            return bboxes
+
+        view_mat = active_camera.get_view_matrix()
+        proj_mat = active_camera.get_projection_matrix()
+
+        from src.engine.synthetic.label_utils import LabelUtils
+        
+        merged_bboxes = {}
+        
+        for ent in self.scene.entities:
+            semantic = ent.get_component(SemanticComponent)
+            tf = ent.get_component(TransformComponent)
+            mesh = ent.get_component(MeshRenderer)
+
+            if semantic and tf and mesh and mesh.visible and not getattr(mesh, 'is_proxy', False):
+                bbox = LabelUtils.get_2d_bounding_box(tf, mesh.geometry, view_mat, proj_mat, width, height)
+                if bbox:
+                    xmin, ymin, xmax, ymax = bbox
+                    t_id = semantic.track_id
+                    c_id = semantic.class_id
+                    
+                    # [CRITICAL MERGE LOGIC FIX]: 
+                    # Strictly segregate bounding boxes using both Track ID AND Class ID.
+                    # This isolates objects if they are grouped but have different semantic labels.
+                    merge_key = f"{t_id}_{c_id}"
+                    
+                    if merge_key in merged_bboxes:
+                        curr = merged_bboxes[merge_key]
+                        merged_bboxes[merge_key] = [
+                            min(curr[0], xmin),
+                            min(curr[1], ymin),
+                            max(curr[2], xmax),
+                            max(curr[3], ymax)
+                        ]
+                    else:
+                        merged_bboxes[merge_key] = [xmin, ymin, xmax, ymax]
+                        
+        return list(merged_bboxes.values())
+
+    # =========================================================================
+    # RESOURCE & FACADE ROUTING (Omitted unmodified code for brevity...)
     # =========================================================================
 
     def load_texture_to_selected(self, map_attr: str, filepath: str) -> None:
@@ -236,10 +279,6 @@ class SceneManager:
         for child in ent.children:
             if self._check_texture_usage(child, path): return True
         return False
-
-    # =========================================================================
-    # DELEGATES TO SUB-MANAGERS (FACADE ROUTING)
-    # =========================================================================
 
     def get_scene_snapshot(self) -> str: return self.serializer.get_scene_snapshot()
     def restore_snapshot(self, snapshot_str: str, current_aspect: float) -> None: self.serializer.restore_snapshot(snapshot_str, current_aspect)

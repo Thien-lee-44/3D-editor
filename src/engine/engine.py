@@ -108,6 +108,10 @@ class Engine:
         if target_tf: 
             self.hud_renderer.render(w, h, active_axis, is_hover, target_tf, view)
 
+    def get_debug_bboxes(self, width: int, height: int) -> list:
+        """Fetch pre-calculated bounding boxes from the scene manager for validation rendering."""
+        return self.scene_mgr.get_debug_bboxes(width, height) if self.scene_mgr else []
+
     # =========================================================================
     # RESOURCE MANAGEMENT DELEGATES
     # =========================================================================
