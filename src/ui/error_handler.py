@@ -11,7 +11,6 @@ from typing import Callable, Any, Optional
 from PySide6.QtCore import QObject, Signal
 from PySide6.QtWidgets import QMessageBox, QApplication
 
-# IMPORT: Domain Exceptions to filter expected vs unexpected errors
 from src.app.exceptions import EngineError
 
 class ErrorDispatcher(QObject):

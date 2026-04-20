@@ -3,7 +3,7 @@ from src.ui.error_handler import safe_execute
 from src.ui.views.panels.math_gen_view import MathGeneratorPanelView
 
 class MathGenController:
-    """Điều phối công cụ Procedural Math Surface Generation."""
+    """Coordinates procedural math-surface generation requests from the UI."""
     def __init__(self) -> None:
         self.view = MathGeneratorPanelView(controller=self)
 

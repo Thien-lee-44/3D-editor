@@ -186,7 +186,6 @@ class EditorMainWindow(QMainWindow):
         action = self.sender()
         if isinstance(action, QAction):
             ltype = action.data()
-            # FIXED: Push the command directly, no unpack, no try/except needed
             self._controller.add_light(
                 ltype, self.chk_global_proxy.isChecked(), self.chk_global_light.isChecked()
             )
@@ -259,7 +258,7 @@ class EditorMainWindow(QMainWindow):
     def action_toggle_visibility(self) -> None: self._controller.toggle_visibility_selected()
 
     def action_paste(self) -> None: 
-        # FIXED: Only call Paste, any bypass errors will be caught by the Controller
+        # Keep paste behavior centralized in the controller for consistent validation.
         self._controller.paste_copied()
 
     def action_change_bg_color(self) -> None:
