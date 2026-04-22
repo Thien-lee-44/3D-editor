@@ -107,6 +107,13 @@ class AnimationComponent:
         kf_data = data.get("keyframes", [])
         if kf_data:
             self.keyframes = [Keyframe.deserialize(k) for k in kf_data]
+            for kf in self.keyframes:
+                cam_state = kf.state.get("Camera")
+                if isinstance(cam_state, dict):
+                    if "active" in cam_state and "is_active" not in cam_state:
+                        cam_state["is_active"] = bool(cam_state.pop("active"))
+                    if "ortho" in cam_state and "ortho_size" not in cam_state:
+                        cam_state["ortho_size"] = float(cam_state.pop("ortho"))
             if self.keyframes:
                 self.active_keyframe_index = 0
         else:

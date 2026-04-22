@@ -72,7 +72,8 @@ class ViewportController:
                 else:
                     self.hovered_axis = None
             
-            ctx.events.emit(AppEvent.SCENE_CHANGED)
+            if not self.is_hud:
+                ctx.events.emit(AppEvent.SCENE_CHANGED)
             return
 
         should_redraw = False
@@ -92,6 +93,10 @@ class ViewportController:
                 
             if self.is_hud:
                 ctx.engine.handle_hud_gizmo_drag(dx, dy, self.active_axis, width, height)
+                data = ctx.engine.get_selected_entity_data()
+                if data and data.get("tf"):
+                    rot = data["tf"].get("rotation", [0.0, 0.0, 0.0])
+                    ctx.events.emit(AppEvent.TRANSFORM_FAST_UPDATED, ("ROTATE", (rot[0], rot[1], rot[2])))
             else:
                 ctx.engine.handle_gizmo_drag(dx, dy, self.active_axis, width, height)
                 tf_data = ctx.engine.get_selected_transform_state()

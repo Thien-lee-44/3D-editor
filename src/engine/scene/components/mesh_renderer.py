@@ -102,7 +102,7 @@ class MeshRenderer(Component):
         data["mat__specular"] = list(mat._specular)
         data["mat_emission"] = list(mat.emission)
         
-        data["mat_tex_paths"] = getattr(mat, 'tex_paths', {})
+        data["mat_tex_paths"] = mat.get_tex_paths_snapshot() if hasattr(mat, 'get_tex_paths_snapshot') else {}
         
         return data
 
@@ -111,7 +111,6 @@ class MeshRenderer(Component):
         Deserializes layout configurations and dynamically requests the ResourceManager 
         to rebuild missing geometry/texture objects into VRAM.
         """
-        from src.engine.resources.resource_manager import ResourceManager
         from src.engine.geometry.primitives import PrimitivesManager
         
         self.visible = bool(data.get("visible", True))
@@ -127,6 +126,7 @@ class MeshRenderer(Component):
             sub_name = data.get("submesh_name", "")
             if os.path.exists(path):
                 # Retrieve from VRAM Cache rather than re-uploading
+                from src.engine.resources.resource_manager import ResourceManager
                 mesh_list = ResourceManager.get_model(path)
                 if mesh_list:
                     self.geometry = next((m for m in mesh_list if getattr(m, 'name', '') == sub_name), mesh_list[0])
@@ -170,11 +170,4 @@ class MeshRenderer(Component):
         mat._specular = glm.vec3(*data.get("mat__specular", list(DEFAULT_MAT_SPECULAR)))
         mat.emission = glm.vec3(*data.get("mat_emission", list(DEFAULT_MAT_EMISSION)))
         
-        mat.tex_paths = data.get("mat_tex_paths", {})
-        
-        # Safely request textures back into VRAM
-        for attr_name, t_path in mat.tex_paths.items():
-            if t_path and os.path.exists(t_path):
-                tid = ResourceManager.load_texture(t_path)
-                if tid != 0:
-                    setattr(mat, attr_name, tid)
+        mat.apply_texture_paths(data.get("mat_tex_paths", {}))

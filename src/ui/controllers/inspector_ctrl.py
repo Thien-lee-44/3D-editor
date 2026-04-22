@@ -194,19 +194,24 @@ class InspectorController:
     def load_texture(self, map_attr: str, filepath: str) -> None:
         if self._is_updating_ui: return
         self.request_undo_snapshot()
+        timeline = getattr(ctx.main_window._controller, 'timeline_ctrl', None) if hasattr(ctx, 'main_window') else None
+        curr_time = timeline.current_time if timeline else 0.0
+        if curr_time > 0.01 and hasattr(ctx.engine, 'animator'):
+            # Prime animation state before mutating material to preserve base snapshot.
+            ctx.engine.animator.evaluate(curr_time, 0.0)
         if hasattr(ctx, 'main_window') and hasattr(ctx.main_window, 'gl_widget'):
             ctx.main_window.gl_widget.makeCurrent()
             ctx.engine.load_texture_to_selected(map_attr, filepath)
             ctx.main_window.gl_widget.doneCurrent()
         else:
             ctx.engine.load_texture_to_selected(map_attr, filepath)
-            
-        timeline = getattr(ctx.main_window._controller, 'timeline_ctrl', None) if hasattr(ctx, 'main_window') else None
-        curr_time = timeline.current_time if timeline else 0.0
+
         data = ctx.engine.get_selected_entity_data()
         
-        if data and "mesh" in data and "tex_paths" in data["mesh"]:
-            is_kf, is_new, t_time = ctx.engine.update_keyframe_property(curr_time, "Mesh", "mat_tex_paths", data["mesh"]["tex_paths"])
+        if data and "mesh" in data and "mat_tex_paths" in data["mesh"]:
+            is_kf, is_new, t_time = ctx.engine.update_keyframe_property(
+                curr_time, "Mesh", "mat_tex_paths", data["mesh"]["mat_tex_paths"]
+            )
             if timeline and is_kf:
                 if is_new: 
                     timeline._refresh_dope_sheet()
@@ -222,14 +227,19 @@ class InspectorController:
     def remove_texture(self, map_attr: str) -> None:
         if self._is_updating_ui: return
         self.request_undo_snapshot()
-        ctx.engine.remove_texture_from_selected(map_attr)
-        
         timeline = getattr(ctx.main_window._controller, 'timeline_ctrl', None) if hasattr(ctx, 'main_window') else None
         curr_time = timeline.current_time if timeline else 0.0
+        if curr_time > 0.01 and hasattr(ctx.engine, 'animator'):
+            # Prime animation state before mutating material to preserve base snapshot.
+            ctx.engine.animator.evaluate(curr_time, 0.0)
+        ctx.engine.remove_texture_from_selected(map_attr)
+
         data = ctx.engine.get_selected_entity_data()
         
-        if data and "mesh" in data and "tex_paths" in data["mesh"]:
-            is_kf, is_new, t_time = ctx.engine.update_keyframe_property(curr_time, "Mesh", "mat_tex_paths", data["mesh"]["tex_paths"])
+        if data and "mesh" in data and "mat_tex_paths" in data["mesh"]:
+            is_kf, is_new, t_time = ctx.engine.update_keyframe_property(
+                curr_time, "Mesh", "mat_tex_paths", data["mesh"]["mat_tex_paths"]
+            )
             if timeline and is_kf:
                 if is_new: 
                     timeline._refresh_dope_sheet()

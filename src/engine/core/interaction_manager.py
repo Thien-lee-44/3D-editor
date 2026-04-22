@@ -189,7 +189,8 @@ class InteractionManager:
             tf = custom_tf
             mode = "ROTATE"
             ray_origin, ray_dir = self.get_ray(mx, my, width, height, cam_tf, cam, custom_view, custom_proj)
-            inv_gizmo = glm.inverse(glm.mat4_cast(tf.quat_rot))
+            # HUD is rendered with global orientation, so picking must use global quaternion too.
+            inv_gizmo = glm.inverse(glm.mat4_cast(tf.global_quat_rot))
             ring_radius, ring_thick = 0.8, 0.08
         else:
             if self.scene.selected_index < 0: return None
@@ -311,13 +312,19 @@ class InteractionManager:
         """Applies input deltas to rotate via the corner Arcball UI."""
         if self.scene.selected_index < 0: return
         tf = self.scene.entities[self.scene.selected_index].get_component(TransformComponent)
+        if not tf:
+            return
         cam_tf, cam = self._get_active_camera()
         hud_view = glm.translate(glm.mat4(1.0), glm.vec3(0, 0, -2.5)) * (glm.mat4(glm.mat3(cam.get_view_matrix())) if cam else glm.mat4(1.0))
+        global_quat = tf.global_quat_rot
         
         if active_axis in ['X', 'Y', 'Z']:
-            tf.rotate_local(active_axis, InteractionMath.calc_gizmo_rotate_angle(-dx, dy, active_axis, tf.quat_rot, hud_view, 1.5))
+            angle = InteractionMath.calc_gizmo_rotate_angle(-dx, dy, active_axis, global_quat, hud_view, 1.5)
+            tf.rotate_local(active_axis, angle)
         else:
-            tf.quat_rot, tf.rotation = InteractionMath.calc_arcball_rotation(dx, dy, tf.quat_rot, hud_view, speed_x=0.5, speed_y=0.5)
+            new_global_quat, _ = InteractionMath.calc_arcball_rotation(dx, dy, global_quat, hud_view, speed_x=0.5, speed_y=0.5)
+            tf.quat_rot = tf.world_to_local_quat(new_global_quat)
+            tf.rotation = glm.degrees(glm.eulerAngles(tf.quat_rot))
         
         tf.sync_from_gui()
 

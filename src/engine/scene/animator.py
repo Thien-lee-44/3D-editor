@@ -5,6 +5,7 @@ from src.engine.scene.scene import Scene
 from src.engine.scene.components import TransformComponent, MeshRenderer, LightComponent, CameraComponent
 from src.engine.scene.components.animation_cmp import AnimationComponent, Keyframe
 from src.engine.resources.resource_manager import ResourceManager
+from src.app.config import TEXTURE_CHANNELS
 
 COMP_MAP = {
     "Transform": TransformComponent,
@@ -12,6 +13,7 @@ COMP_MAP = {
     "Light": LightComponent,
     "Camera": CameraComponent
 }
+TEXTURE_MAP_ATTRS = tuple(TEXTURE_CHANNELS.values())
 
 class AnimatorSystem:
     def __init__(self, scene: Scene) -> None:
@@ -29,6 +31,8 @@ class AnimatorSystem:
 
             # Evaluate Keyframe logic based on playhead position
             if global_time <= 0.01:
+                if not getattr(anim, "_base_state_cache", {}):
+                    self._capture_base_state(anim, ent)
                 self._restore_base_state(anim, ent)
             elif anim.keyframes:
                 self._process_keyframes(anim, ent, global_time)
@@ -106,11 +110,23 @@ class AnimatorSystem:
             for prop_name, val1 in props1.items():
                 if prop_name == "rotation" and "quat_rot" in props1:
                     continue
-                    
-                val2 = props2.get(prop_name, val1) 
+
+                resolved_prop_name = prop_name
+                if comp_name == "Camera" and prop_name in ("active", "is_active"):
+                    resolved_prop_name = "is_active"
+                    val2 = props2.get("is_active", props2.get("active", val1))
+                elif comp_name == "Camera" and prop_name in ("ortho", "ortho_size"):
+                    resolved_prop_name = "ortho_size"
+                    val2 = props2.get("ortho_size", props2.get("ortho", val1))
+                else:
+                    val2 = props2.get(prop_name, val1)
                 
                 if isinstance(val1, bool):
-                    new_val = val1 if t < 0.5 else val2
+                    if comp_name == "Camera" and resolved_prop_name == "is_active":
+                        # Camera activation must switch exactly at the keyframe boundary.
+                        new_val = val1 if t < 1.0 else val2
+                    else:
+                        new_val = val1 if t < 0.5 else val2
                 elif isinstance(val1, (float, int)):
                     new_val = float(val1) + (float(val2) - float(val1)) * t
                 elif isinstance(val1, list):
@@ -124,21 +140,38 @@ class AnimatorSystem:
                         new_val = [q_slerp.w, q_slerp.x, q_slerp.y, q_slerp.z]
                     else:
                         new_val = val1
+                elif isinstance(val1, dict) and isinstance(val2, dict):
+                    # Discrete payload (e.g., texture maps): step exactly at keyframe boundary
+                    new_val = val1 if t < 1.0 else val2
                 else:
-                    new_val = val1
+                    # Non-interpolable payloads (e.g., strings/enums): step at boundary
+                    new_val = val1 if t < 1.0 else val2
                     
                 if comp_name == "Mesh" and prop_name.startswith("mat_"):
                     if prop_name == "mat_tex_paths" and isinstance(new_val, dict):
-                        tex_maps = ["map_diffuse", "map_specular", "map_bump", "map_ambient", "map_emission", "map_shininess", "map_opacity", "map_reflection"]
-                        for tex_map in tex_maps:
-                            if hasattr(comp.material, tex_map):
-                                setattr(comp.material, tex_map, 0)
-                            
-                        for attr_name, t_path in new_val.items():
-                            if hasattr(comp.material, attr_name) and t_path and os.path.exists(t_path):
-                                tid = ResourceManager.load_texture(t_path)
-                                if tid != 0: 
-                                    setattr(comp.material, attr_name, tid)
+                        normalized_paths = {
+                            key: path.strip()
+                            for key, path in new_val.items()
+                            if key in TEXTURE_MAP_ATTRS and isinstance(path, str) and path.strip()
+                        }
+                        current_paths = (
+                            comp.material.get_tex_paths_snapshot()
+                            if hasattr(comp.material, "get_tex_paths_snapshot")
+                            else {}
+                        )
+                        if normalized_paths != current_paths:
+                            if hasattr(comp.material, "apply_texture_paths"):
+                                comp.material.apply_texture_paths(normalized_paths)
+                            else:
+                                for tex_map in TEXTURE_MAP_ATTRS:
+                                    if hasattr(comp.material, tex_map):
+                                        setattr(comp.material, tex_map, 0)
+                                comp.material.tex_paths = dict(normalized_paths)
+                                for attr_name, t_path in comp.material.tex_paths.items():
+                                    if hasattr(comp.material, attr_name) and os.path.exists(t_path):
+                                        tid = ResourceManager.load_texture(t_path)
+                                        if tid != 0:
+                                            setattr(comp.material, attr_name, tid)
                     else:
                         actual_prop = prop_name[4:]
                         if hasattr(comp.material, actual_prop):
@@ -153,16 +186,16 @@ class AnimatorSystem:
                             else:
                                 setattr(comp.material, actual_prop, new_val)
                 else:
-                    if hasattr(comp, prop_name):
+                    if hasattr(comp, resolved_prop_name):
                         if isinstance(new_val, list):
                             if len(new_val) == 3:
-                                setattr(comp, prop_name, glm.vec3(*new_val))
-                            elif len(new_val) == 4 and prop_name == "quat_rot":
-                                setattr(comp, prop_name, glm.quat(*new_val))
+                                setattr(comp, resolved_prop_name, glm.vec3(*new_val))
+                            elif len(new_val) == 4 and resolved_prop_name == "quat_rot":
+                                setattr(comp, resolved_prop_name, glm.quat(*new_val))
                             else:
-                                setattr(comp, prop_name, new_val)
+                                setattr(comp, resolved_prop_name, new_val)
                         else:
-                            setattr(comp, prop_name, new_val)
+                            setattr(comp, resolved_prop_name, new_val)
                 
                 if comp_name == "Transform":
                     comp.is_dirty = True

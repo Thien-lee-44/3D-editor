@@ -1,8 +1,10 @@
+import os
 from PySide6.QtWidgets import QProgressDialog, QApplication
 from PySide6.QtCore import Qt, QEventLoop
 
 from src.app import ctx, AppEvent
 from src.app.exceptions import SimulationError
+from src.app.config import TEXTURE_CHANNELS
 from src.ui.error_handler import safe_execute
 from src.ui.views.panels.asset_view import AssetBrowserPanelView
 
@@ -25,6 +27,37 @@ class AssetController:
         data = ctx.engine.get_selected_entity_data()
         path_to_find = data["mesh"]["mat_tex_paths"].get("map_diffuse", "") if data and data.get("mesh") else ""
         self.view.highlight_texture(path_to_find)
+
+    def _get_timeline(self):
+        return getattr(ctx.main_window._controller, 'timeline_ctrl', None) if hasattr(ctx, 'main_window') else None
+
+    def _is_same_texture_assignment(self, map_attr: str, path: str) -> bool:
+        data = ctx.engine.get_selected_entity_data()
+        if not data or not data.get("mesh"):
+            return False
+        tex_paths = data["mesh"].get("mat_tex_paths", {})
+        current = tex_paths.get(map_attr, "")
+        if not isinstance(current, str):
+            return False
+        return os.path.normcase(os.path.normpath(current)) == os.path.normcase(os.path.normpath(path))
+
+    def _sync_texture_change_to_keyframe(self) -> None:
+        timeline = self._get_timeline()
+        curr_time = timeline.current_time if timeline else 0.0
+        data = ctx.engine.get_selected_entity_data()
+        if not data or "mesh" not in data or "mat_tex_paths" not in data["mesh"]:
+            return
+
+        is_kf, is_new, t_time = ctx.engine.update_keyframe_property(
+            curr_time, "Mesh", "mat_tex_paths", data["mesh"]["mat_tex_paths"]
+        )
+        if timeline and is_kf:
+            if is_new:
+                timeline._refresh_dope_sheet()
+            if abs(timeline.current_time - t_time) > 0.001:
+                timeline.set_time(t_time)
+            elif hasattr(ctx.engine, 'animator'):
+                ctx.engine.animator.evaluate(t_time, 0.0)
 
     @safe_execute(context="Import Model")
     def import_model(self, path: str) -> None:
@@ -99,14 +132,33 @@ class AssetController:
     def apply_texture(self, path: str, map_attr: str) -> None:
         if ctx.engine.get_selected_entity_id() < 0:
             raise SimulationError("Please select an entity in the scene first!")
-            
+
+        if map_attr not in TEXTURE_CHANNELS.values():
+            raise SimulationError(f"Unsupported texture channel: '{map_attr}'")
+
+        selected = ctx.engine.get_selected_entity_data()
+        if not selected or not selected.get("mesh"):
+            raise SimulationError("Selected entity has no mesh renderer to receive textures.")
+
+        normalized_path = os.path.abspath(path)
+        if self._is_same_texture_assignment(map_attr, normalized_path):
+            ctx.events.emit(AppEvent.ENTITY_SELECTED, ctx.engine.get_selected_entity_id())
+            return
+
+        timeline = self._get_timeline()
+        curr_time = timeline.current_time if timeline else 0.0
+        if curr_time > 0.01 and hasattr(ctx.engine, 'animator'):
+            # Prime animation state before mutating material to preserve base snapshot.
+            ctx.engine.animator.evaluate(curr_time, 0.0)
+
         ctx.events.emit(AppEvent.ACTION_BEFORE_MUTATION)
         if hasattr(ctx, 'main_window') and hasattr(ctx.main_window, 'gl_widget'):
             ctx.main_window.gl_widget.makeCurrent()
-            ctx.engine.load_texture_to_selected(map_attr, path)
+            ctx.engine.load_texture_to_selected(map_attr, normalized_path)
             ctx.main_window.gl_widget.doneCurrent()
         else:
-            ctx.engine.load_texture_to_selected(map_attr, path)
-            
+            ctx.engine.load_texture_to_selected(map_attr, normalized_path)
+
+        self._sync_texture_change_to_keyframe()
         ctx.events.emit(AppEvent.ENTITY_SELECTED, ctx.engine.get_selected_entity_id()) 
         ctx.events.emit(AppEvent.SCENE_CHANGED)

@@ -49,7 +49,8 @@ class CameraWidget(BaseComponentWidget):
         self.layout.addLayout(f_cam)
 
     def update_data(self, cd: Dict[str, Any], mesh_visible: bool) -> None:
-        if cd["is_active"]:
+        is_active = bool(cd.get("is_active", cd.get("active", False)))
+        if is_active:
             self.btn_set_cam_active.setText("Active Camera")
             self.btn_set_cam_active.setStyleSheet(STYLE_BTN_ACTIVE_CAM)
             self.btn_set_cam_active.setEnabled(False) 
@@ -85,7 +86,7 @@ class CameraWidget(BaseComponentWidget):
         self.sp_cam_ortho.setVisible(not is_persp)
 
         self.sp_cam_fov.setValue(cd.get("fov", DEFAULT_CAMERA_FOV))
-        self.sp_cam_ortho.setValue(cd.get("ortho", 5.0))
+        self.sp_cam_ortho.setValue(cd.get("ortho_size", cd.get("ortho", 5.0)))
         self.sp_cam_near.setValue(cd.get("near", DEFAULT_CAMERA_NEAR))
         self.sp_cam_far.setValue(cd.get("far", DEFAULT_CAMERA_FAR))
 

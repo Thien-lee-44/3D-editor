@@ -3,6 +3,7 @@ from PySide6.QtWidgets import QVBoxLayout, QScrollArea, QWidget
 from PySide6.QtCore import Qt
 from typing import Any, Dict
 
+from src.app import ctx
 from src.ui.views.panels.base_panel import BasePanel
 from src.ui.widgets.inspector.header_widget import HeaderWidget
 from src.ui.widgets.inspector.transform_widget import TransformWidget
@@ -107,6 +108,16 @@ class InspectorPanelView(BasePanel):
                 for key, val in kf_state["Mesh"].items():
                     mesh_data[key] = val
 
+            if "Camera" in kf_state:
+                cam_data = dict(data.get("cam", {}))
+                for key, val in kf_state["Camera"].items():
+                    if key == "active":
+                        cam_data["is_active"] = val
+                    elif key == "ortho":
+                        cam_data["ortho_size"] = val
+                    else:
+                        cam_data[key] = val
+
         self.header_widget.update_data(data.get("name", "Entity"))
         self.header_widget.setVisible(True)
         
@@ -158,4 +169,8 @@ class InspectorPanelView(BasePanel):
         self.transform_widget.fast_update_single_axis(mode, values)
         if mode == "ROTATE" and self.light_widget.isVisible():
             if hasattr(self.light_widget, 'fast_update_rotation'):
-                self.light_widget.fast_update_rotation(values)
+                data = ctx.engine.get_selected_entity_data()
+                if data and data.get("light"):
+                    pitch = data["light"].get("pitch", 0.0)
+                    yaw = data["light"].get("yaw", 0.0)
+                    self.light_widget.fast_update_rotation((pitch, yaw))

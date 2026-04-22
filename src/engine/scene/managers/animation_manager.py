@@ -1,13 +1,16 @@
 import glm
+import copy
 from typing import Dict, Any, Tuple, Optional, List
 
 from src.engine.scene.components import TransformComponent, MeshRenderer, LightComponent, CameraComponent
 from src.engine.scene.components.animation_cmp import AnimationComponent, Keyframe
 from src.engine.scene.entity import Entity
+from src.app.config import TEXTURE_CHANNELS
 
 TIME_TOLERANCE: float = 0.01
 BASE_STATE_INDEX: int = -2
 UNFOCUSED_INDEX: int = -1
+TEXTURE_MAP_ATTRS = tuple(TEXTURE_CHANNELS.values())
 
 class AnimationBackendManager:
     """
@@ -107,7 +110,13 @@ class AnimationBackendManager:
         is_new_kf = False
         if 0 <= anim.active_keyframe_index < len(anim.keyframes):
             target_kf = anim.keyframes[anim.active_keyframe_index]
-        elif anim.active_keyframe_index == BASE_STATE_INDEX or current_time <= TIME_TOLERANCE:
+        elif anim.active_keyframe_index == BASE_STATE_INDEX:
+            if current_time <= TIME_TOLERANCE:
+                if hasattr(anim, '_base_state_cache'):
+                    anim._base_state_cache.clear()
+                return False, current_time
+            target_kf, is_new_kf = self._get_or_create_keyframe(anim, current_time)
+        elif current_time <= TIME_TOLERANCE:
             if hasattr(anim, '_base_state_cache'):
                 anim._base_state_cache.clear()
             return False, current_time
@@ -150,7 +159,13 @@ class AnimationBackendManager:
         is_new_kf = False
         if 0 <= anim.active_keyframe_index < len(anim.keyframes):
             target_kf = anim.keyframes[anim.active_keyframe_index]
-        elif anim.active_keyframe_index == BASE_STATE_INDEX or current_time <= TIME_TOLERANCE:
+        elif anim.active_keyframe_index == BASE_STATE_INDEX:
+            if current_time <= TIME_TOLERANCE:
+                if hasattr(anim, '_base_state_cache'):
+                    anim._base_state_cache.clear()
+                return False, False, 0.0
+            target_kf, is_new_kf = self._get_or_create_keyframe(anim, current_time)
+        elif current_time <= TIME_TOLERANCE:
             if hasattr(anim, '_base_state_cache'):
                 anim._base_state_cache.clear()
             return False, False, 0.0
@@ -161,7 +176,15 @@ class AnimationBackendManager:
             return False, False, 0.0
             
         self._ensure_kf_component_state(target_kf, ent, comp_name)
-        target_kf.state[comp_name][prop] = value
+        if comp_name == "Mesh" and prop == "mat_tex_paths" and isinstance(value, dict):
+            normalized = {
+                key: path.strip()
+                for key, path in value.items()
+                if key in TEXTURE_MAP_ATTRS and isinstance(path, str) and path.strip()
+            }
+            target_kf.state[comp_name][prop] = normalized
+        else:
+            target_kf.state[comp_name][prop] = copy.deepcopy(value)
         
         if comp_name == "Transform" and prop == "rotation":
             q = glm.quat(glm.radians(glm.vec3(*value)))

@@ -6,8 +6,9 @@ from typing import Tuple, Dict, Any, Optional
 # Import SSOT configuration
 from src.app.config import (
     DEFAULT_MAT_AMBIENT, DEFAULT_MAT_DIFFUSE, 
-    DEFAULT_MAT_SPECULAR, DEFAULT_MAT_SHININESS
+    DEFAULT_MAT_SPECULAR, DEFAULT_MAT_SHININESS, TEXTURE_CHANNELS
 )
+TEXTURE_MAP_ATTRS = tuple(TEXTURE_CHANNELS.values())
 
 class RenderState:
     """Encapsulates OpenGL render state settings for a specific material."""
@@ -93,6 +94,45 @@ class Material:
     def specular(self, val: glm.vec3) -> None: 
         self._specular = val
 
+    def clear_texture_slots(self) -> None:
+        for attr_name in TEXTURE_MAP_ATTRS:
+            setattr(self, attr_name, 0)
+
+    def get_tex_paths_snapshot(self) -> Dict[str, str]:
+        return {
+            k: v
+            for k, v in self.tex_paths.items()
+            if k in TEXTURE_MAP_ATTRS and isinstance(v, str) and v.strip()
+        }
+
+    def apply_texture_paths(self, tex_paths: Dict[str, Any]) -> None:
+        """
+        Applies a texture-path payload deterministically:
+        1. Clears all texture slots
+        2. Keeps only supported texture map keys
+        3. Rebuilds texture IDs for existing files
+        """
+        from src.engine.resources.resource_manager import ResourceManager
+
+        self.clear_texture_slots()
+        sanitized_paths: Dict[str, str] = {}
+
+        for attr_name in TEXTURE_MAP_ATTRS:
+            raw_path = tex_paths.get(attr_name, "")
+            if not isinstance(raw_path, str):
+                continue
+            t_path = raw_path.strip()
+            if not t_path:
+                continue
+
+            sanitized_paths[attr_name] = t_path
+            if os.path.exists(t_path):
+                tid = ResourceManager.load_texture(t_path)
+                if tid != 0:
+                    setattr(self, attr_name, tid)
+
+        self.tex_paths = sanitized_paths
+
     def apply(self, shader: Any) -> None:
         """
         Transmits scalar/vector properties and binds active texture units to the currently executing Shader.
@@ -141,22 +181,5 @@ class Material:
         self.shininess = mtl_data.get('shininess', DEFAULT_MAT_SHININESS)
         self.opacity = mtl_data.get('opacity', 1.0)
         
-        # Deferred import ensures the ResourceManager is fully initialized before texture resolution
-        from src.engine.resources.resource_manager import ResourceManager
-        
-        def load_and_assign_map(key: str, attr_name: str) -> None:
-            t_path = mtl_data.get(key, "")
-            if t_path and os.path.exists(t_path):
-                tid = ResourceManager.load_texture(t_path)
-                if tid != 0: 
-                    setattr(self, attr_name, tid)
-                    self.tex_paths[attr_name] = t_path
-
-        load_and_assign_map('map_diffuse', 'map_diffuse')
-        load_and_assign_map('map_specular', 'map_specular')
-        load_and_assign_map('map_bump', 'map_bump')
-        load_and_assign_map('map_ambient', 'map_ambient')
-        load_and_assign_map('map_emission', 'map_emission')
-        load_and_assign_map('map_shininess', 'map_shininess')
-        load_and_assign_map('map_opacity', 'map_opacity')
-        load_and_assign_map('map_reflection', 'map_reflection')
+        tex_payload = {attr_name: mtl_data.get(attr_name, "") for attr_name in TEXTURE_MAP_ATTRS}
+        self.apply_texture_paths(tex_payload)

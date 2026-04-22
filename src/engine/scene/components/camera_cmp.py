@@ -65,7 +65,7 @@ class CameraComponent(Component):
     def from_dict(self, data: Dict[str, Any]) -> None:
         self.mode = data.get("mode", "Perspective")
         self.fov = float(data.get("fov", DEFAULT_CAMERA_FOV))
-        self.ortho_size = float(data.get("ortho_size", 5.0))
-        self.is_active = bool(data.get("is_active", False))
+        self.ortho_size = float(data.get("ortho_size", data.get("ortho", 5.0)))
+        self.is_active = bool(data.get("is_active", data.get("active", False)))
         self.near = float(data.get("near", DEFAULT_CAMERA_NEAR))
         self.far = float(data.get("far", DEFAULT_CAMERA_FAR))

@@ -81,8 +81,6 @@ class EntityFactory:
         tf = light.add_component(TransformComponent())
         tf.rotation = glm.vec3(*DEFAULT_SCENE_LIGHT_ROT)
         tf.quat_rot = glm.quat(glm.radians(tf.rotation))
-        tf.locked_axes["pos"] = True  # [CONSTRAINT]
-        tf.locked_axes["scl"] = True  # [CONSTRAINT]
         
         self._attach_animation(light)
         light.add_component(LightComponent(light_type="Directional"))
@@ -109,8 +107,7 @@ class EntityFactory:
     def add_empty_group(self) -> None:
         """Spawns an empty transform node primarily used for hierarchical grouping."""
         ent = Entity(DEFAULT_GROUP_NAME, is_group=True)
-        tf = ent.add_component(TransformComponent())
-        tf.locked_axes["scl"] = True  # [CONSTRAINT] Prevent shearing of child objects
+        ent.add_component(TransformComponent())
         
         self._attach_animation(ent)
         self._attach_semantic(ent, class_id=3) 
@@ -164,16 +161,6 @@ class EntityFactory:
         ent = Entity(f"{light_type} Light")
         tf = ent.add_component(TransformComponent())
         
-        # [CONSTRAINT RULES]
-        if light_type == "Directional":
-            tf.locked_axes["pos"] = True
-            tf.locked_axes["scl"] = True
-        elif light_type == "Point":
-            tf.locked_axes["rot"] = True
-            tf.locked_axes["scl"] = True
-        elif light_type == "Spot":
-            tf.locked_axes["scl"] = True
-        
         self._attach_animation(ent) 
         
         light_comp = ent.add_component(LightComponent(light_type=light_type))
@@ -183,6 +170,13 @@ class EntityFactory:
             renderer = ent.add_component(MeshRenderer())
             renderer.is_proxy = True
             renderer.visible = proxy_enabled
+
+            # Lock only proxy transform modes (do not lock regular entities/groups)
+            if light_type == "Point":
+                tf.locked_axes["rot"] = True
+                tf.locked_axes["scl"] = True
+            elif light_type == "Spot":
+                tf.locked_axes["scl"] = True
             
             if light_type == "Point": 
                 renderer.geometry = PrimitivesManager.get_proxy("proxy_point.ply")
@@ -244,7 +238,6 @@ class EntityFactory:
             master_ent = Entity(display_name, is_group=True)
             master_tf = master_ent.add_component(TransformComponent())
             master_tf.position = master_center 
-            master_tf.locked_axes["scl"] = True  # [CONSTRAINT] Prevent global hierarchy shearing
             
             self._attach_animation(master_ent)
             master_track_id = self._attach_semantic(master_ent, class_id=0)
@@ -263,8 +256,6 @@ class EntityFactory:
                 
                 obj_tf = obj_ent.add_component(TransformComponent())
                 obj_tf.position = obj_world_center - master_center
-                if is_multi_part:
-                    obj_tf.locked_axes["scl"] = True  # [CONSTRAINT]
                 
                 self._attach_animation(obj_ent)
                 obj_track_id = self._attach_semantic(obj_ent, class_id=0, track_id=master_track_id)

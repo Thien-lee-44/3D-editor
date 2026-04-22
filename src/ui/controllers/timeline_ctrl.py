@@ -127,17 +127,17 @@ class TimelineController:
             return 
             
         self.current_entity_id = entity_id
-        
-        # Snap time to origin and focus Base State exclusively on newly selected entity
-        if not self.is_playing:
-            self.set_time(0.0)
-            self.select_keyframe(0) # 0 is the UI index for Base State
-        else:
+
+        # Preserve current timeline time when changing selection to avoid camera transform jumps.
+        if self.is_playing:
             self.select_keyframe(-1)
+        else:
+            info = ctx.engine.get_animation_info()
+            self.selected_kf_idx = info.get("active_idx", -1)
             
         self._refresh_dope_sheet()
         
-        if hasattr(ctx.engine, 'animator') and not self.is_updating_ui:
+        if hasattr(ctx.engine, 'animator') and self.is_playing and not self.is_updating_ui:
             ctx.engine.animator.evaluate(self.current_time, 0.0)
             ctx.events.emit(AppEvent.COMPONENT_PROPERTY_CHANGED)
         

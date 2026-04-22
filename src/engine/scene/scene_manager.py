@@ -1,3 +1,4 @@
+import os
 import glm
 from typing import Dict, List, Any, Optional, Tuple
 
@@ -255,27 +256,56 @@ class SceneManager:
         if self.scene.selected_index < 0: return
         mesh = self.scene.entities[self.scene.selected_index].get_component(MeshRenderer)
         if mesh:
-            tex_id = ResourceManager.load_texture(filepath)
-            setattr(mesh.material, map_attr, tex_id)
-            if not hasattr(mesh.material, 'tex_paths'): mesh.material.tex_paths = {}
-            mesh.material.tex_paths[map_attr] = filepath
+            normalized_path = os.path.normpath(os.path.abspath(filepath))
+            tex_id = ResourceManager.load_texture(normalized_path)
+            if tex_id == 0:
+                return
+
+            if hasattr(mesh.material, "get_tex_paths_snapshot") and hasattr(mesh.material, "apply_texture_paths"):
+                new_paths = mesh.material.get_tex_paths_snapshot()
+                new_paths[map_attr] = normalized_path
+                mesh.material.apply_texture_paths(new_paths)
+            else:
+                setattr(mesh.material, map_attr, tex_id)
+                if not hasattr(mesh.material, 'tex_paths'):
+                    mesh.material.tex_paths = {}
+                mesh.material.tex_paths[map_attr] = normalized_path
 
     def remove_texture_from_selected(self, map_attr: str) -> None:
         if self.scene.selected_index < 0: return
         mesh = self.scene.entities[self.scene.selected_index].get_component(MeshRenderer)
         if mesh and getattr(mesh.material, map_attr, 0) != 0:
-            setattr(mesh.material, map_attr, 0)
-            if hasattr(mesh.material, 'tex_paths') and map_attr in mesh.material.tex_paths:
-                del mesh.material.tex_paths[map_attr]
+            if hasattr(mesh.material, "get_tex_paths_snapshot") and hasattr(mesh.material, "apply_texture_paths"):
+                new_paths = mesh.material.get_tex_paths_snapshot()
+                if map_attr in new_paths:
+                    del new_paths[map_attr]
+                mesh.material.apply_texture_paths(new_paths)
+            else:
+                setattr(mesh.material, map_attr, 0)
+                if hasattr(mesh.material, 'tex_paths') and map_attr in mesh.material.tex_paths:
+                    del mesh.material.tex_paths[map_attr]
 
     def is_texture_in_use(self, path: str) -> bool:
+        target_path = os.path.normcase(os.path.normpath(os.path.abspath(path)))
         for ent in self.scene.entities:
-            if self._check_texture_usage(ent, path): return True
+            if self._check_texture_usage(ent, target_path): return True
         return False
 
     def _check_texture_usage(self, ent: Entity, path: str) -> bool:
         mesh = ent.get_component(MeshRenderer)
-        if mesh and hasattr(mesh.material, 'tex_paths') and path in mesh.material.tex_paths.values(): return True
+        if mesh:
+            if hasattr(mesh.material, "get_tex_paths_snapshot"):
+                tex_values = mesh.material.get_tex_paths_snapshot().values()
+            else:
+                tex_values = getattr(mesh.material, "tex_paths", {}).values()
+
+            normalized_values = {
+                os.path.normcase(os.path.normpath(os.path.abspath(v)))
+                for v in tex_values
+                if isinstance(v, str) and v.strip()
+            }
+            if path in normalized_values:
+                return True
         for child in ent.children:
             if self._check_texture_usage(child, path): return True
         return False
