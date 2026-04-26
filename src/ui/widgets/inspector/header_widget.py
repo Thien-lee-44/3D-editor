@@ -1,5 +1,5 @@
 from typing import Any
-from PySide6.QtWidgets import QFormLayout, QLineEdit
+from PySide6.QtWidgets import QFormLayout, QLineEdit, QMessageBox
 from .base_widget import BaseComponentWidget
 
 class HeaderWidget(BaseComponentWidget):
@@ -19,8 +19,29 @@ class HeaderWidget(BaseComponentWidget):
 
     def apply_name(self) -> None:
         if not self._controller: return
-        self.request_undo_snapshot() 
-        self._controller.set_properties("Entity", {"name": self.txt_name.text().strip()})
         
+        new_name = self.txt_name.text().strip()
+        if not new_name:
+            return
+            
         from src.app import ctx, AppEvent
+        
+        current_id = ctx.engine.get_selected_entity_id()
+        entities = ctx.engine.get_scene_entities_list()
+        
+        for ent in entities:
+            if ent["id"] != current_id and ent["name"] == new_name:
+                QMessageBox.warning(
+                    self, 
+                    "Invalid Name", 
+                    f"The name '{new_name}' is already in use.\nPlease choose a unique name."
+                )
+                data = ctx.engine.get_selected_entity_data()
+                if data:
+                    self.update_data(data.get("name", ""))
+                return
+
+        self.request_undo_snapshot() 
+        self._controller.set_properties("Entity", {"name": new_name})
+        
         ctx.events.emit(AppEvent.HIERARCHY_NEEDS_REFRESH)

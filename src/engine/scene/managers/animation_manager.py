@@ -187,7 +187,29 @@ class AnimationBackendManager:
         comp = ent.get_component(comp_cls) if comp_cls else None
         
         for prop, value in payload.items():
+            if comp_name == "Transform" and comp:
+                if prop == "position" and comp.locked_axes.get("pos", False): continue
+                if prop in ["rotation", "quat_rot"] and comp.locked_axes.get("rot", False): continue
+                if prop == "scale" and comp.locked_axes.get("scl", False): continue
+
             if comp_name in NON_ANIMATABLE_PROPS and prop in NON_ANIMATABLE_PROPS[comp_name]:
+                if comp:
+                    if prop.startswith("mat_") and hasattr(comp, 'material') and comp.material:
+                        mat_prop = prop[4:]
+                        if isinstance(value, list) and len(value) == 3:
+                            setattr(comp.material, mat_prop, glm.vec3(*value))
+                        else:
+                            setattr(comp.material, mat_prop, value)
+                    elif hasattr(comp, prop):
+                        if isinstance(value, list) and len(value) == 3:
+                            setattr(comp, prop, glm.vec3(*value))
+                        else:
+                            setattr(comp, prop, value)
+                            
+                    if hasattr(comp, 'is_dirty'):
+                        comp.is_dirty = True
+                    if hasattr(comp, 'sync_from_gui'):
+                        comp.sync_from_gui()
                 continue
                 
             if comp_name == "Mesh" and prop == "mat_tex_paths" and isinstance(value, dict):
@@ -263,6 +285,17 @@ class AnimationBackendManager:
             comp.active_keyframe_index = UNFOCUSED_INDEX
             comp.duration = 0.0
             
+        elif prop == "MOVE_KEYFRAME":
+            real_idx = value.get("index", -1)
+            if 0 < real_idx < len(comp.keyframes):
+                new_time = max(0.0, value.get("time", 0.0))
+                target_kf = comp.keyframes[real_idx]
+                target_kf.time = new_time
+                if hasattr(comp, '_sort_and_update_duration'):
+                    comp._sort_and_update_duration()
+                if target_kf in comp.keyframes:
+                    comp.active_keyframe_index = comp.keyframes.index(target_kf)
+                    
         elif prop == "loop":
             comp.loop = bool(value)
             
@@ -282,10 +315,11 @@ class AnimationBackendManager:
                 offset = value.get("offset", 0.0)
                 new_kfs = []
                 for idx in indices:
-                    if 0 < idx < len(comp.keyframes):
+                    if 0 <= idx < len(comp.keyframes):
                         nkf = comp.keyframes[idx].clone()
                         nkf.time += offset
-                        new_kfs.append(nkf)
+                        if nkf.time > 0.001:
+                            new_kfs.append(nkf)
                         
                 for nkf in new_kfs:
                     existing = [i for i, k in enumerate(comp.keyframes) if abs(k.time - nkf.time) < TIME_TOLERANCE]
@@ -293,6 +327,7 @@ class AnimationBackendManager:
                         comp.keyframes[existing[0]] = nkf
                     else:
                         comp.keyframes.append(nkf)
+                        
                 if hasattr(comp, '_sort_and_update_duration'):
                     comp._sort_and_update_duration()
                     
@@ -304,6 +339,41 @@ class AnimationBackendManager:
                 comp.active_keyframe_index = UNFOCUSED_INDEX
                 if hasattr(comp, '_sort_and_update_duration'):
                     comp._sort_and_update_duration()
+
+            elif mode == "DUPLICATE_KEYFRAME_RANGE":
+                start_idx = int(value.get("start_idx", -1))
+                end_idx = int(value.get("end_idx", -1))
+                target_time = max(0.0, float(value.get("target_time", 0.0)))
+                
+                if 0 <= start_idx <= end_idx < len(comp.keyframes):
+                    base_time = comp.keyframes[start_idx].time
+                    new_kfs = []
+                    
+                    for i in range(start_idx, end_idx + 1):
+                        src_kf = comp.keyframes[i]
+                        offset = src_kf.time - base_time
+                        new_kf = src_kf.clone()
+                        new_kf.time = target_time + offset
+                        if new_kf.time > 0.001:
+                            new_kfs.append(new_kf)
+                    
+                    for new_kf in new_kfs:
+                        existing_idx = -1
+                        for j, ext_kf in enumerate(comp.keyframes):
+                            if abs(ext_kf.time - new_kf.time) < TIME_TOLERANCE:
+                                existing_idx = j
+                                break
+                        
+                        if existing_idx >= 0:
+                            comp.keyframes[existing_idx] = new_kf
+                        else:
+                            comp.keyframes.append(new_kf)
+                    
+                    if hasattr(comp, '_sort_and_update_duration'):
+                        comp._sort_and_update_duration()
+                    
+                    if new_kfs and new_kfs[-1] in comp.keyframes:
+                        comp.active_keyframe_index = comp.keyframes.index(new_kfs[-1])
 
     def _update_kf_from_component(self, kf: Keyframe, comp_name: str, comp: Any, specific_attrs: Optional[List[str]] = None) -> None:
         if not comp: 
@@ -341,37 +411,7 @@ class AnimationBackendManager:
             return
             
         light = ent.get_component(LightComponent)
-        cam = ent.get_component(CameraComponent)
         tf = ent.get_component(TransformComponent)
-        
-        locked_pos, locked_rot, locked_scl = False, False, False
-        if light:
-            locked_scl = True
-            l_type = getattr(light, 'type', '')
-            if l_type == "Directional": 
-                locked_pos = True
-            elif l_type == "Point": 
-                locked_rot = True
-        elif cam: 
-            locked_scl = True
-            
-        if tf and hasattr(tf, 'locked_axes'):
-            locked_pos |= tf.locked_axes.get('pos', False)
-            locked_rot |= tf.locked_axes.get('rot', False)
-            locked_scl |= tf.locked_axes.get('scl', False)
-            
-        if locked_scl:
-            scale_val = getattr(tf, 'scale', [1.0, 1.0, 1.0])
-            if hasattr(scale_val, 'x'):
-                kf_state["Transform"]["scale"] = [scale_val.x, scale_val.y, scale_val.z]
-            else:
-                kf_state["Transform"]["scale"] = list(scale_val)
-                
-        if locked_pos:
-            kf_state["Transform"]["position"] = [0.0, 0.0, 0.0]
-        if locked_rot:
-            kf_state["Transform"]["rotation"] = [0.0, 0.0, 0.0]
-            kf_state["Transform"]["quat_rot"] = [1.0, 0.0, 0.0, 0.0]
 
         if light and tf and getattr(light, 'type', '') in ["Directional", "Spot"]:
             if "Light" not in kf_state:

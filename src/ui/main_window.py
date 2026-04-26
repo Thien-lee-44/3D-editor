@@ -142,23 +142,47 @@ class EditorMainWindow(QMainWindow):
         self.rad_rot.setEnabled(True)
         self.rad_scl.setEnabled(True)
         
+        tf_data = data.get("tf", {})
+        locked_axes = tf_data.get("locked_axes", {})
+        
+        if locked_axes.get("pos", False): self.rad_mov.setEnabled(False)
+        if locked_axes.get("rot", False): self.rad_rot.setEnabled(False)
+        if locked_axes.get("scl", False): self.rad_scl.setEnabled(False)
+
         is_light = bool(data.get("light"))
         is_cam = bool(data.get("cam"))
         
         if is_light:
-            light_type = data["light"]["type"]
+            light_type = data["light"].get("type", "")
             self.rad_scl.setEnabled(False) 
-            
             if light_type == "Directional": 
                 self.rad_mov.setEnabled(False) 
-                if self.rad_mov.isChecked(): self.rad_rot.setChecked(True)
             elif light_type == "Point": 
                 self.rad_rot.setEnabled(False) 
-                if self.rad_rot.isChecked(): self.rad_mov.setChecked(True)
-                    
         elif is_cam:
             self.rad_scl.setEnabled(False) 
 
+        if self.rad_mov.isChecked() and not self.rad_mov.isEnabled():
+            if self.rad_rot.isEnabled(): self.rad_rot.setChecked(True)
+            elif self.rad_scl.isEnabled(): self.rad_scl.setChecked(True)
+            else: self._force_uncheck_radio(self.rad_mov)
+
+        elif self.rad_rot.isChecked() and not self.rad_rot.isEnabled():
+            if self.rad_mov.isEnabled(): self.rad_mov.setChecked(True)
+            elif self.rad_scl.isEnabled(): self.rad_scl.setChecked(True)
+            else: self._force_uncheck_radio(self.rad_rot)
+
+        elif self.rad_scl.isChecked() and not self.rad_scl.isEnabled():
+            if self.rad_mov.isEnabled(): self.rad_mov.setChecked(True)
+            elif self.rad_rot.isEnabled(): self.rad_rot.setChecked(True)
+            else: self._force_uncheck_radio(self.rad_scl)
+
+    def _force_uncheck_radio(self, radio: QRadioButton) -> None:
+        radio.setAutoExclusive(False)
+        radio.setChecked(False)
+        radio.setAutoExclusive(True)
+        self._controller.set_manipulation_mode("NONE")
+        
     def create_menu_bar(self) -> None:
         menubar = self.menuBar()
         
@@ -356,7 +380,8 @@ class EditorMainWindow(QMainWindow):
         if self.rad_rot.isChecked(): self._controller.set_manipulation_mode("ROTATE")
         elif self.rad_mov.isChecked(): self._controller.set_manipulation_mode("MOVE")
         elif self.rad_scl.isChecked(): self._controller.set_manipulation_mode("SCALE")
-
+        else: self._controller.set_manipulation_mode("NONE")
+        
     def _on_render_settings_changed(self, *args: Any) -> None:
         is_combined = (self.cmb_render.currentIndex() == 1)
         self.w_comb_opts.setVisible(is_combined)

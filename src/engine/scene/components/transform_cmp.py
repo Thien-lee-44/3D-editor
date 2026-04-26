@@ -9,7 +9,7 @@ class TransformComponent(Transform, Component):
     """
     Manages spatial state (Position, Rotation, Scale) and computes hierarchical 
     transformation matrices relative to parent entities within the Scene Graph.
-    Implements Aggressive Matrix Caching and State-Hash Guards.
+    Implements Aggressive Matrix Caching, State-Hash Guards, and Transform Constraints.
     """
     
     def __init__(self) -> None:
@@ -48,6 +48,7 @@ class TransformComponent(Transform, Component):
         """
         Calculates the global transformation matrix.
         Bypasses heavy matrix multiplication entirely if the spatial state hasn't mutated.
+        Applies hierarchical constraints based on locked_axes.
         """
         # [STATE-HASH GUARD]: Detect silent mutations bypassing the setter (e.g. tf.position += vel)
         current_state = (
@@ -70,13 +71,35 @@ class TransformComponent(Transform, Component):
             if parent_tf: 
                 p_mat = parent_tf.get_matrix()
                 
-                if self.locked_axes.get('scl', False):
-                    global_mat = p_mat * local_mat
-                    pos = glm.vec3(global_mat[3])
-                    global_quat = parent_tf.global_quat_rot * self.quat_rot
-                    final_mat = glm.translate(glm.mat4(1.0), pos) * glm.mat4_cast(global_quat) * glm.scale(glm.mat4(1.0), self.scale)
+                raw_global_mat = p_mat * local_mat
+                
+                if not any(self.locked_axes.values()):
+                    final_mat = raw_global_mat
                 else:
-                    final_mat = p_mat * local_mat
+                    if self.locked_axes.get("pos", False):
+                        final_pos = self.position
+                    else:
+                        final_pos = glm.vec3(raw_global_mat[3])
+                        
+                    if self.locked_axes.get("rot", False):
+                        final_quat = self.quat_rot
+                    else:
+                        final_quat = parent_tf.global_quat_rot * self.quat_rot
+                        
+                    if self.locked_axes.get("scl", False):
+                        final_scl = self.scale
+                    else:
+                        col0 = glm.vec3(raw_global_mat[0])
+                        col1 = glm.vec3(raw_global_mat[1])
+                        col2 = glm.vec3(raw_global_mat[2])
+                        sx = glm.length(col0)
+                        sy = glm.length(col1)
+                        sz = glm.length(col2)
+                        if glm.determinant(glm.mat3(raw_global_mat)) < 0:
+                            sx = -sx
+                        final_scl = glm.vec3(sx, sy, sz)
+                        
+                    final_mat = glm.translate(glm.mat4(1.0), final_pos) * glm.mat4_cast(final_quat) * glm.scale(glm.mat4(1.0), final_scl)
             else:
                 final_mat = local_mat
         else:
@@ -140,7 +163,7 @@ class TransformComponent(Transform, Component):
         Matrix Decomposition Algorithm: Reconstructs the local Position, Rotation, 
         and Scale vectors mathematically from a baked 4x4 transformation matrix.
         """
-        self.position = glm.vec3(matrix[3])
+        pos = glm.vec3(matrix[3])
         
         v_x = glm.vec3(matrix[0])
         v_y = glm.vec3(matrix[1])
@@ -153,14 +176,19 @@ class TransformComponent(Transform, Component):
         if glm.determinant(glm.mat3(matrix)) < 0: 
             sx = -sx  
             
-        self.scale = glm.vec3(sx, sy, sz)
-        
-        if sx == 0.0 or sy == 0.0 or sz == 0.0:
-            self.quat_rot = glm.quat()
-        else:
-            self.quat_rot = glm.quat_cast(glm.mat3(v_x/sx, v_y/sy, v_z/sz))
+        if not self.locked_axes.get("pos", False):
+            self.position = pos
             
-        self.rotation = glm.degrees(glm.eulerAngles(self.quat_rot))
+        if not self.locked_axes.get("scl", False):
+            self.scale = glm.vec3(sx, sy, sz)
+       
+        if not self.locked_axes.get("rot", False):
+            nsx = sx if sx != 0 else 0.000001
+            nsy = sy if sy != 0 else 0.000001
+            nsz = sz if sz != 0 else 0.000001
+            
+            self.quat_rot = glm.quat_cast(glm.mat3(v_x/nsx, v_y/nsy, v_z/nsz))
+            self.rotation = glm.degrees(glm.eulerAngles(self.quat_rot))
         self.is_dirty = True
 
     def to_dict(self) -> Dict[str, Any]:

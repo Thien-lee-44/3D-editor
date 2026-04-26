@@ -92,6 +92,21 @@ class TimelineController:
         ctx.events.emit(AppEvent.COMPONENT_PROPERTY_CHANGED)
         ctx.events.emit(AppEvent.SCENE_CHANGED)
 
+    @safe_execute(context="Move Keyframe")
+    def move_keyframe(self, index: int, new_time: float) -> None:
+        ctx.events.emit(AppEvent.ACTION_BEFORE_MUTATION)
+        ctx.engine.set_component_property("Animation", "MOVE_KEYFRAME", {"index": index, "time": new_time})
+        self._refresh_dope_sheet()
+        
+        self.current_time = new_time
+        self.view.update_ui_time(self.current_time)
+        
+        if hasattr(ctx.engine, 'animator'):
+            ctx.engine.animator.evaluate(self.current_time, 0.0, target_entity_id=self.current_entity_id)
+            
+        ctx.events.emit(AppEvent.COMPONENT_PROPERTY_CHANGED)
+        ctx.events.emit(AppEvent.SCENE_CHANGED)
+
     @safe_execute(context="Mutate Keyframes")
     def mutate_keyframes(self, payload: dict) -> None:
         ctx.events.emit(AppEvent.ACTION_BEFORE_MUTATION)

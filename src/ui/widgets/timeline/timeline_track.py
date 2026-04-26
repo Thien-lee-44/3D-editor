@@ -20,7 +20,6 @@ class TimelineTrackWidget(QWidget):
         self.keyframes: List[float] = []
         self.selected_indices: Set[int] = set()
         
-        self.is_scrubbing: bool = False
         self.is_box_selecting: bool = False
         self.box_start_x: float = 0.0
         self.box_end_x: float = 0.0
@@ -160,7 +159,7 @@ class TimelineTrackWidget(QWidget):
                 rep_idx = list(self.selected_indices)[0] if self.selected_indices else -1
                 self.keyframe_selected.emit(rep_idx)
                 
-                self.drag_initial_times = {i: self.keyframes[i] for i in self.selected_indices if i > 0}
+                self.drag_initial_times = {i: self.keyframes[i] for i in self.selected_indices}
                 if self.drag_initial_times:
                     self.drag_start_time = self._x_to_time(x)
                     if event.modifiers() & Qt.AltModifier:
@@ -168,7 +167,10 @@ class TimelineTrackWidget(QWidget):
                     elif event.modifiers() & Qt.ControlModifier:
                         self.drag_mode = "SCALE"
                     else:
-                        self.drag_mode = "MOVE"
+                        if 0 in self.selected_indices:
+                            self.drag_mode = "NONE"
+                        else:
+                            self.drag_mode = "MOVE"
             else:
                 if not (event.modifiers() & Qt.ShiftModifier):
                     self.selected_indices.clear()
@@ -191,21 +193,21 @@ class TimelineTrackWidget(QWidget):
             if self.drag_mode == "MOVE":
                 delta = t - self.drag_start_time
                 for i, init_t in self.drag_initial_times.items():
-                    self.keyframes[i] = max(0.01, init_t + delta)
+                    if i > 0:
+                        self.keyframes[i] = max(0.01, init_t + delta)
             elif self.drag_mode == "SCALE":
                 origin = min(self.drag_initial_times.values())
                 dist = self.drag_start_time - origin
                 factor = (t - origin) / dist if dist > 0.01 else 1.0
                 for i, init_t in self.drag_initial_times.items():
-                    self.keyframes[i] = max(0.01, origin + (init_t - origin) * factor)
+                    if i == 0:
+                        self.keyframes[i] = 0.0
+                    else:
+                        self.keyframes[i] = max(0.01, origin + (init_t - origin) * factor)
             elif self.drag_mode == "COPY":
                 delta = t - self.drag_start_time
                 self.ghost_keyframes = [max(0.01, init_t + delta) for init_t in self.drag_initial_times.values()]
             self.update()
-        else:
-            self.is_scrubbing = True
-            new_time = self._x_to_time(x)
-            self.time_scrubbed.emit(new_time)
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
         if event.button() == Qt.LeftButton:
@@ -220,7 +222,7 @@ class TimelineTrackWidget(QWidget):
             elif self.drag_mode != "NONE":
                 payload = {}
                 if self.drag_mode in ["MOVE", "SCALE"]:
-                    payload = {"mode": "UPDATE", "data": {i: self.keyframes[i] for i in self.drag_initial_times}}
+                    payload = {"mode": "UPDATE", "data": {i: self.keyframes[i] for i in self.drag_initial_times if i > 0}}
                 elif self.drag_mode == "COPY":
                     delta = self._x_to_time(event.position().x()) - self.drag_start_time
                     payload = {"mode": "COPY", "indices": list(self.drag_initial_times.keys()), "offset": delta}
@@ -233,15 +235,17 @@ class TimelineTrackWidget(QWidget):
                 self.drag_initial_times.clear()
                 self.ghost_keyframes.clear()
                 
-            self.is_scrubbing = False
             self.update()
 
     def keyPressEvent(self, event: QKeyEvent) -> None:
         if event.key() in (Qt.Key_Delete, Qt.Key_Backspace):
-            valid_indices = [i for i in self.selected_indices if i > 0]
-            if valid_indices:
-                self.keyframes_mutated.emit({"mode": "DELETE_BULK", "indices": valid_indices})
-                self.selected_indices.clear()
-                self.update()
+            if 0 in self.selected_indices:
+                pass
+            else:
+                valid_indices = [i for i in self.selected_indices if i > 0]
+                if valid_indices:
+                    self.keyframes_mutated.emit({"mode": "DELETE_BULK", "indices": valid_indices})
+                    self.selected_indices.clear()
+                    self.update()
         else:
             super().keyPressEvent(event)

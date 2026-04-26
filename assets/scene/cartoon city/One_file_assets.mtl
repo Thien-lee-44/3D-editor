@@ -1,0 +1,163 @@
+# Blender 3.6.19 MTL File: 'Cartoon_City_Free.blend'
+# www.blender.org
+
+newmtl Asphalt_Dark_Gray
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Kd 0.138536 0.138536 0.138536
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+d 1.000000
+illum 2
+
+newmtl Billboard
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ni 1.450000
+d 1.000000
+illum 2
+map_Kd textures/Banners.png
+map_Ke textures/Banners.png
+
+newmtl Car_Color
+Ns 810.000000
+Ka 0.200000 0.200000 0.200000
+Ks 0.500000 0.500000 0.500000
+Ni 1.450000
+d 1.000000
+illum 3
+map_Kd textures/Textures1.png
+map_Ke textures/Textures1.png
+
+newmtl Car_Headlights
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ni 1.450000
+d 1.000000
+illum 2
+map_Kd textures/Textures1.png
+map_Ke textures/Textures1.png
+
+newmtl Car_Taillights
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ni 1.450000
+d 1.000000
+illum 2
+map_Kd textures/Textures1.png
+map_Ke textures/Textures1.png
+
+newmtl Color
+Ns 90.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+d 1.000000
+illum 2
+map_Kd textures/Textures1.png
+
+newmtl Color_Glossy
+Ns 640.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+d 1.000000
+illum 2
+map_Kd textures/Textures1.png
+
+newmtl Emissive
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ni 1.450000
+d 1.000000
+illum 2
+map_Kd textures/Textures1.png
+map_Ke textures/Textures1.png
+
+newmtl Glass
+Ns 902.500000
+Ka 0.200000 0.200000 0.200000
+Ks 1.000000 1.000000 1.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+d 0.500000
+illum 6
+map_Kd textures/Textures1.png
+
+newmtl Graffiti
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+illum 2
+map_Kd textures/Graffiti.png
+map_d textures/Graffiti.png
+
+newmtl Grass
+Ns 57.687042
+Ka 1.000000 1.000000 1.000000
+Kd 0.250158 0.445201 0.130137
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+d 1.000000
+illum 2
+
+newmtl Metal
+Ns 446.647400
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+d 1.000000
+illum 3
+map_Kd textures/Textures1.png.008.png
+
+newmtl Road_Signs
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+d 1.000000
+illum 2
+map_Kd textures/Road_Signs.png
+
+newmtl Roads
+Ns 62.500000
+Ka 1.000000 1.000000 1.000000
+Ks 0.300000 0.300000 0.300000
+Ni 1.450000
+d 1.000000
+illum 2
+map_Kd textures/Roads.png
+map_Ke textures/Roads.png
+
+newmtl Tile_1
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+d 1.000000
+illum 2
+map_Kd textures/Tiles_2.png
+map_Ns textures/Tiles_2_Roughness.png
+map_Bump -bm 5.000000 textures/Tiles_2_Normal.png
+
+newmtl scrolling_text
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ni 1.450000
+illum 2
+map_Kd textures/scrolling text.png
+map_Ke textures/scrolling text.png
+map_d textures/scrolling text.png

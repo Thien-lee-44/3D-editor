@@ -65,16 +65,22 @@ class SceneManager:
         if index < 0 or index >= len(self.scene.entities): return
         tf = self.scene.entities[index].get_component(TransformComponent)
         if tf:
-            tf.position = glm.vec3(0.0)
-            tf.rotation = glm.vec3(0.0)
-            tf.scale = glm.vec3(1.0)
-            tf.quat_rot = glm.quat(glm.vec3(0.0))
-            tf.sync_from_gui()
+            if not tf.locked_axes.get("pos", False):
+                tf.position = glm.vec3(0.0)
+            if not tf.locked_axes.get("rot", False):
+                tf.rotation = glm.vec3(0.0)
+                tf.quat_rot = glm.quat(glm.vec3(0.0))
+            if not tf.locked_axes.get("scl", False):
+                tf.scale = glm.vec3(1.0)
+                
+            tf.is_dirty = True
+            if hasattr(tf, 'sync_from_gui'):
+                tf.sync_from_gui()
 
     def update_light_direction(self, yaw: float, pitch: float) -> None:
         if self.scene.selected_index < 0: return
         tf = self.scene.entities[self.scene.selected_index].get_component(TransformComponent)
-        if tf:
+        if tf and not tf.locked_axes.get("rot", False):
             world_quat = glm.angleAxis(glm.radians(yaw), glm.vec3(0, 1, 0)) * \
                          glm.angleAxis(glm.radians(pitch), glm.vec3(1, 0, 0))
             if tf.entity and tf.entity.parent:
@@ -86,7 +92,9 @@ class SceneManager:
             else:
                 tf.quat_rot = world_quat
             tf.rotation = glm.degrees(glm.eulerAngles(tf.quat_rot))
-            tf.sync_from_gui()
+            tf.is_dirty = True
+            if hasattr(tf, 'sync_from_gui'):
+                tf.sync_from_gui()
 
     def set_active_camera_selected(self) -> None:
         if self.scene.selected_index < 0: return
@@ -108,6 +116,7 @@ class SceneManager:
         tf = self.scene.entities[self.scene.selected_index].get_component(TransformComponent)
         if not tf: return None
         mode = getattr(self.scene, 'manipulation_mode', 'ROTATE')
+        if mode == "NONE": return None
         val = tf.rotation if mode == "ROTATE" else (tf.position if mode == "MOVE" else tf.scale)
         return (mode, (val.x, val.y, val.z))
 
@@ -177,10 +186,15 @@ class SceneManager:
 
         for prop, value in payload.items():
             if comp_name == "Transform" and prop in ["position", "rotation", "scale"]:
+                if prop == "position" and comp.locked_axes.get("pos", False): continue
+                if prop == "rotation" and comp.locked_axes.get("rot", False): continue
+                if prop == "scale" and comp.locked_axes.get("scl", False): continue                
                 setattr(comp, prop, glm.vec3(*value))
                 if prop == "rotation": 
                     comp.quat_rot = glm.quat(glm.radians(comp.rotation))
-                comp.sync_from_gui()
+                comp.is_dirty = True
+                if hasattr(comp, 'sync_from_gui'):
+                    comp.sync_from_gui()
             elif prop.startswith("mat_"): 
                 setattr(comp.material, prop[4:], glm.vec3(*value) if isinstance(value, list) else value)
             else: 

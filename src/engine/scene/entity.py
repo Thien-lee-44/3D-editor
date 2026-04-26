@@ -129,10 +129,15 @@ class Entity:
                         g_scl *= curr_tf.scale
                     curr = curr.parent
                     
-                new_tf.position = glm.vec3(getattr(orig_tf, 'global_position', orig_tf.position))
-                new_tf.quat_rot = glm.quat(getattr(orig_tf, 'global_quat_rot', orig_tf.quat_rot))
-                new_tf.rotation = glm.degrees(glm.eulerAngles(new_tf.quat_rot))
-                new_tf.scale = g_scl
+                if not new_tf.locked_axes.get("pos", False):
+                    new_tf.position = glm.vec3(getattr(orig_tf, 'global_position', orig_tf.position))
+                    
+                if not new_tf.locked_axes.get("rot", False):
+                    new_tf.quat_rot = glm.quat(getattr(orig_tf, 'global_quat_rot', orig_tf.quat_rot))
+                    new_tf.rotation = glm.degrees(glm.eulerAngles(new_tf.quat_rot))
+                    
+                if not new_tf.locked_axes.get("scl", False):
+                    new_tf.scale = g_scl
                 
                 new_tf.is_dirty = True
                 if hasattr(new_tf, 'sync_from_gui'):

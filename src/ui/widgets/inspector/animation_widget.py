@@ -228,8 +228,10 @@ class AnimationWidget(BaseComponentWidget):
         
         self.request_undo_snapshot()
         
+        # Đã bọc lệnh DUPLICATE_KEYFRAME_RANGE vào bên trong MUTATE_KEYFRAMES để Engine nhận diện đúng
         payload = {
-            "DUPLICATE_KEYFRAME_RANGE": {
+            "MUTATE_KEYFRAMES": {
+                "mode": "DUPLICATE_KEYFRAME_RANGE",
                 "start_idx": start_idx,
                 "end_idx": end_idx,
                 "target_time": dst_time

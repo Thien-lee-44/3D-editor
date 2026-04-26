@@ -1,11 +1,11 @@
 from PySide6.QtCore import QPoint
+from PySide6.QtWidgets import QMessageBox
 from typing import List
 from src.app import ctx, AppEvent
 from src.ui.error_handler import safe_execute
 from src.ui.views.panels.hierarchy_view import HierarchyPanelView
 
 class HierarchyController:
-    """Manages the logic and state of the Scene Graph Hierarchy tree."""
     def __init__(self) -> None:
         self.view = HierarchyPanelView(controller=self)
         
@@ -30,7 +30,6 @@ class HierarchyController:
         ctx.events.emit(AppEvent.SCENE_CHANGED)
 
     def handle_multi_selection(self, ids: List[int]) -> None:
-        """Caches the list of currently highlighted items for group/ungroup operations."""
         self.selected_multi_ids = ids
 
     @safe_execute(context="Reorder Hierarchy")
@@ -41,13 +40,26 @@ class HierarchyController:
 
     @safe_execute(context="Rename Entity")
     def handle_rename(self, entity_id: int, new_name: str) -> None:
-        """Synchronizes an inline hierarchy rename directly into the engine state."""
+        if not new_name:
+            ctx.events.emit(AppEvent.HIERARCHY_NEEDS_REFRESH)
+            return
+
+        entities = ctx.engine.get_scene_entities_list()
+        for ent in entities:
+            if ent["id"] != entity_id and ent["name"] == new_name:
+                QMessageBox.warning(
+                    self.view, 
+                    "Invalid Name", 
+                    f"The name '{new_name}' is already in use.\nPlease choose a unique name."
+                )
+                ctx.events.emit(AppEvent.HIERARCHY_NEEDS_REFRESH)
+                return
+
         ctx.events.emit(AppEvent.ACTION_BEFORE_MUTATION)
         
         if hasattr(ctx.engine, 'rename_entity'):
             ctx.engine.rename_entity(entity_id, new_name)
         else:
-            # Fallback logic leveraging existing API if a direct rename method is unavailable
             prev_id = ctx.engine.get_selected_entity_id()
             ctx.engine.select_entity(entity_id)
             ctx.engine.set_component_property("Entity", "name", new_name)

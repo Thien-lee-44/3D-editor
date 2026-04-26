@@ -66,6 +66,8 @@ class EntityFactory:
         tf = light.add_component(TransformComponent())
         tf.rotation = glm.vec3(*DEFAULT_SCENE_LIGHT_ROT)
         tf.quat_rot = glm.quat(glm.radians(tf.rotation))
+        tf.locked_axes["pos"] = True
+        tf.locked_axes["scl"] = True
         
         self._attach_animation(light)
         light.add_component(LightComponent(light_type="Directional"))
@@ -137,6 +139,15 @@ class EntityFactory:
         ent = Entity(f"{light_type} Light")
         tf = ent.add_component(TransformComponent())
         
+        if light_type == "Directional":
+            tf.locked_axes["pos"] = True
+            tf.locked_axes["scl"] = True
+        elif light_type == "Point":
+            tf.locked_axes["rot"] = True
+            tf.locked_axes["scl"] = True
+        elif light_type == "Spot":
+            tf.locked_axes["scl"] = True
+        
         self._attach_animation(ent) 
         
         light_comp = ent.add_component(LightComponent(light_type=light_type))
@@ -147,11 +158,6 @@ class EntityFactory:
             renderer.is_proxy = True
             renderer.visible = proxy_enabled
 
-            if light_type == "Point":
-                tf.locked_axes["rot"] = True
-                tf.locked_axes["scl"] = True
-            elif light_type == "Spot":
-                tf.locked_axes["scl"] = True
             
             if light_type == "Point": 
                 renderer.geometry = PrimitivesManager.get_proxy("proxy_point.ply")
