@@ -149,15 +149,42 @@ class YOLOPipeline:
             logger.exception("An error occurred during the training loop.")
             raise
 
-    def evaluate(self) -> None:
-        """Computes evaluation metrics (mAP) against the validation subset."""
+    def evaluate_metrics(self) -> Dict[str, float]:
+        """
+        Computes and returns structured evaluation metrics.
+
+        Returns:
+            Dict[str, float]: map50, map50_95, precision, recall, f1.
+        """
         logger.info("Initiating model evaluation pipeline...")
         try:
             metrics = self.model.val(device=self.config.device)
-            logger.info(f"Evaluation complete -> mAP@50: {metrics.box.map50:.4f} | mAP@50-95: {metrics.box.map:.4f}")
+            map50 = float(getattr(metrics.box, "map50", 0.0))
+            map50_95 = float(getattr(metrics.box, "map", 0.0))
+            precision = float(getattr(metrics.box, "mp", 0.0))
+            recall = float(getattr(metrics.box, "mr", 0.0))
+            f1 = (2.0 * precision * recall / (precision + recall)) if (precision + recall) > 1e-8 else 0.0
+
+            logger.info(
+                "Evaluation complete -> "
+                f"mAP@50: {map50:.4f} | mAP@50-95: {map50_95:.4f} | "
+                f"P: {precision:.4f} | R: {recall:.4f} | F1: {f1:.4f}"
+            )
+
+            return {
+                "map50": map50,
+                "map50_95": map50_95,
+                "precision": precision,
+                "recall": recall,
+                "f1": f1,
+            }
         except Exception as e:
             logger.exception("Model evaluation failed.")
             raise
+
+    def evaluate(self) -> Dict[str, float]:
+        """Compatibility wrapper for evaluation metrics."""
+        return self.evaluate_metrics()
 
     def export_production(self, format_type: str = "onnx") -> Optional[str]:
         """
@@ -185,7 +212,7 @@ class YOLOPipeline:
             logger.exception("Export process failed.")
             return None
 
-    def predict_sample(self, image_path: Union[str, Path], confidence_threshold: float = 0.5) -> None:
+    def predict_sample(self, image_path: Union[str, Path], confidence_threshold: float = 0.5) -> Optional[str]:
         """
         Executes a localized inference pass on a specified image for visual verification.
         
@@ -196,7 +223,7 @@ class YOLOPipeline:
         target_path = Path(image_path)
         if not target_path.exists():
             logger.error(f"Inference target not found: {target_path}")
-            return
+            return None
 
         logger.info(f"Running inference on target: {target_path.name}")
         best_model_path = Path(self.project_name) / "train_run" / "weights" / "best.pt"
@@ -211,8 +238,10 @@ class YOLOPipeline:
                 show_conf=True
             )
             logger.info(f"Inference complete. Visualized output saved to: {results[0].save_dir}")
+            return str(results[0].save_dir)
         except Exception as e:
             logger.exception("Inference execution failed.")
+            return None
 
 # =====================================================================
 # EXECUTION ENTRY POINT

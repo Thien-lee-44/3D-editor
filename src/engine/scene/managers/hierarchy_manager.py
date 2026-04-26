@@ -5,7 +5,6 @@ from src.engine.scene.entity import Entity
 from src.engine.scene.components import TransformComponent
 from src.engine.scene.components.animation_cmp import AnimationComponent
 from src.engine.scene.components.semantic_cmp import SemanticComponent
-from src.engine.synthetic.tracking_mgr import TrackingManager
 
 class HierarchyManager:
     """
@@ -15,6 +14,13 @@ class HierarchyManager:
     def __init__(self, scene: Any, scene_mgr: Any) -> None:
         self.scene = scene
         self.scene_mgr = scene_mgr
+
+    def _invalidate_animation(self, entity: Entity) -> None:
+        anim = entity.get_component(AnimationComponent)
+        if anim:
+            anim.keyframes.clear()
+            if hasattr(anim, '_base_state_cache'):
+                anim._base_state_cache.clear()
 
     def group_selected_entities(self, entity_ids: List[int]) -> None:
         """Creates a central group node and reparents selected entities under it."""
@@ -44,7 +50,7 @@ class HierarchyManager:
         group_tf.position = centroid
         
         group_ent.add_component(AnimationComponent())
-        group_ent.add_component(SemanticComponent(track_id=TrackingManager.get_next_id(), class_id=3))
+        group_ent.add_component(SemanticComponent(class_id=3))
         
         common_parent = top_level_ents[0].parent
         self.scene.add_entity(group_ent)
@@ -56,6 +62,7 @@ class HierarchyManager:
             if ent.parent:
                 ent.parent.remove_child(ent, keep_world=True)
             group_ent.add_child(ent, keep_world=True)
+            self._invalidate_animation(ent)
             
         self.scene.selected_index = self.scene.entities.index(group_ent)
 
@@ -76,6 +83,7 @@ class HierarchyManager:
             group_ent.remove_child(child, keep_world=True)
             if parent_ent:
                 parent_ent.add_child(child, keep_world=True)
+            self._invalidate_animation(child)
                 
         self.scene.remove_entity(idx)
 
@@ -98,3 +106,5 @@ class HierarchyManager:
                     
                 if new_parent is not None:
                     new_parent.add_child(child, keep_world=True)
+                    
+                self._invalidate_animation(child)

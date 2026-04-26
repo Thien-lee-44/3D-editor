@@ -147,7 +147,7 @@ class ProjectController:
             progress.setWindowModality(Qt.WindowModal)
             progress.setMinimumDuration(0)
             
-            # Ẩn thanh progress bar, chỉ để lại Text
+            
             bar = progress.findChild(QProgressBar)
             if bar:
                 bar.hide()
@@ -160,7 +160,6 @@ class ProjectController:
                 if hasattr(ctx, 'main_window') and hasattr(ctx.main_window, 'gl_widget'):
                     ctx.main_window.gl_widget.makeCurrent()
                     current_aspect = ctx.main_window.gl_widget.width() / max(ctx.main_window.gl_widget.height(), 1)
-                    # Gọi lại hàm load_project cũ (không cần truyền progress_callback nữa)
                     metadata = ctx.engine.load_project(selected_path, current_aspect)
                     ctx.main_window.gl_widget.doneCurrent()
                 else:

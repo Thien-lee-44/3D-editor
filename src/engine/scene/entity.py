@@ -4,7 +4,6 @@ from typing import List, Optional, Type, TypeVar, Any
 
 from src.app.config import DEFAULT_ENTITY_NAME
 
-# Type variable to support generic type inference for component retrieval
 T = TypeVar('T', bound='Component')
 
 class Component:
@@ -74,7 +73,6 @@ class Entity:
             parent_tf = self.get_component(TransformComponent)
             if parent_tf:
                 parent_world = parent_tf.get_matrix()
-                # Decompose the relative offset back into local Position/Rotation/Scale
                 tf.set_from_matrix(glm.inverse(parent_world) * world_mat)
             else:
                 tf.set_from_matrix(world_mat)
@@ -104,8 +102,8 @@ class Entity:
     def __deepcopy__(self, memo: dict) -> 'Entity':
         """
         Custom recursive deep cloning algorithm. 
-        Essential for instantiating complex prefabs or capturing Undo/Redo snapshots 
-        without suffering from shallow memory reference leaks.
+        Detects the copy operation root dynamically via the memoization dictionary to extract
+        pure global transformations by traversing the parent hierarchy, maintaining exact world bounds.
         """
         new_ent = type(self)(self.name, self.is_group) 
         memo[id(self)] = new_ent
@@ -115,9 +113,33 @@ class Entity:
             
         new_ent.parent = None
         
+        is_copy_root = self.parent is None or id(self.parent) not in memo
+        
+        if is_copy_root and self.parent is not None:
+            from src.engine.scene.components import TransformComponent
+            orig_tf = self.get_component(TransformComponent)
+            new_tf = new_ent.get_component(TransformComponent)
+            
+            if orig_tf and new_tf:
+                g_scl = glm.vec3(1.0)
+                curr: Optional['Entity'] = self
+                while curr:
+                    curr_tf = curr.get_component(TransformComponent)
+                    if curr_tf:
+                        g_scl *= curr_tf.scale
+                    curr = curr.parent
+                    
+                new_tf.position = glm.vec3(getattr(orig_tf, 'global_position', orig_tf.position))
+                new_tf.quat_rot = glm.quat(getattr(orig_tf, 'global_quat_rot', orig_tf.quat_rot))
+                new_tf.rotation = glm.degrees(glm.eulerAngles(new_tf.quat_rot))
+                new_tf.scale = g_scl
+                
+                new_tf.is_dirty = True
+                if hasattr(new_tf, 'sync_from_gui'):
+                    new_tf.sync_from_gui()
+        
         for child in self.children:
             new_child = copy.deepcopy(child, memo)
-            # Enforce keep_world=False to prevent mathematical drift during recursive cloning
             new_ent.add_child(new_child, keep_world=False) 
             
         return new_ent

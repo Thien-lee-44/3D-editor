@@ -17,6 +17,11 @@ from src.app.config import (
 )
 
 class LightWidget(BaseComponentWidget):
+    """
+    Inspector widget for Light parameters.
+    Implements Atomic Payload Batching to ensure smooth UI slider performance
+    without triggering redundant Engine synchronization cycles.
+    """
     def __init__(self, controller: Any) -> None:
         super().__init__("Light", controller)
         
@@ -191,14 +196,16 @@ class LightWidget(BaseComponentWidget):
     def apply_light(self) -> None:
         if not self._controller: return
             
-        self._controller.set_property("Light", "on", self.chk_light_on.isChecked())
-        self._controller.set_property("Light", "intensity", self.sp_light_int.value())
-        self._controller.set_property("Light", "ambient_strength", self.sp_l_amb.value())
-        self._controller.set_property("Light", "diffuse_strength", self.sp_l_diff.value())
-        self._controller.set_property("Light", "specular_strength", self.sp_l_spec.value())
-        self._controller.set_property("Light", "constant", self.sp_l_const.value())
-        self._controller.set_property("Light", "linear", self.sp_l_lin.value())
-        self._controller.set_property("Light", "quadratic", self.sp_l_quad.value())
+        payload = {
+            "on": self.chk_light_on.isChecked(),
+            "intensity": self.sp_light_int.value(),
+            "ambient_strength": self.sp_l_amb.value(),
+            "diffuse_strength": self.sp_l_diff.value(),
+            "specular_strength": self.sp_l_spec.value(),
+            "constant": self.sp_l_const.value(),
+            "linear": self.sp_l_lin.value(),
+            "quadratic": self.sp_l_quad.value()
+        }
         
         if self.cmb_light_type.currentText() == "Spot":
             c, o = self.sp_light_cut.value(), self.sp_light_out.value()
@@ -207,16 +214,18 @@ class LightWidget(BaseComponentWidget):
                 self.sp_light_out.blockSignals(True)
                 self.sp_light_out.setValue(o)
                 self.sp_light_out.blockSignals(False)
-            self._controller.set_property("Light", "cutOff", math.cos(math.radians(c)))
-            self._controller.set_property("Light", "outerCutOff", math.cos(math.radians(o)))
+            payload["cutOff"] = math.cos(math.radians(c))
+            payload["outerCutOff"] = math.cos(math.radians(o))
+            
+        self._controller.set_properties("Light", payload)
 
     def apply_light_proxy(self) -> None:
         if not self._controller: return
-        self._controller.set_property("Mesh", "visible", self.chk_light_proxy.isChecked())
+        self._controller.set_properties("Mesh", {"visible": self.chk_light_proxy.isChecked()})
 
     def switch_light_mode(self, idx: int) -> None:
         if not self._controller: return
-        self._controller.set_property("Light", "use_advanced_mode", idx == 1)
+        self._controller.set_properties("Light", {"use_advanced_mode": idx == 1})
         self.w_l_basic.setVisible(idx == 0)
         self.w_l_adv.setVisible(idx == 1)
 
@@ -227,10 +236,13 @@ class LightWidget(BaseComponentWidget):
         diff_c = [s.value() for s in self.sp_light_diff_vec]
         spec_c = [s.value() for s in self.sp_light_spec_vec]
         
-        self._controller.set_property("Light", "color", base_c)
-        self._controller.set_property("Light", "explicit_ambient", amb_c)
-        self._controller.set_property("Light", "explicit_diffuse", diff_c)
-        self._controller.set_property("Light", "explicit_specular", spec_c)
+        payload = {
+            "color": base_c,
+            "explicit_ambient": amb_c,
+            "explicit_diffuse": diff_c,
+            "explicit_specular": spec_c
+        }
+        self._controller.set_properties("Light", payload)
         
         self.btn_light_base.setStyleSheet(rgb_to_hex(base_c))
         self.btn_l_amb_c.setStyleSheet(rgb_to_hex(amb_c))
@@ -256,7 +268,7 @@ class LightWidget(BaseComponentWidget):
         
         if new_c is not None and self._controller:
             self.request_undo_snapshot()
-            self._controller.set_property("Light", prop_name, new_c)
+            self._controller.set_properties("Light", {prop_name: new_c})
             
             vec_map = {
                 'base': self.sp_light_base_vec, 

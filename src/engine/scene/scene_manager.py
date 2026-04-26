@@ -8,7 +8,6 @@ from src.engine.scene.components import TransformComponent, MeshRenderer, LightC
 from src.engine.scene.components.animation_cmp import AnimationComponent
 from src.engine.scene.components.semantic_cmp import SemanticComponent
 
-# Import Sub-Managers
 from src.engine.scene.managers.serialization_manager import SerializationManager
 from src.engine.scene.managers.hierarchy_manager import HierarchyManager
 from src.engine.scene.managers.clipboard_manager import ClipboardManager
@@ -148,11 +147,17 @@ class SceneManager:
         return data
 
     def set_component_property(self, comp_name: str, prop: str, value: Any) -> None:
+        """Legacy singular property update method. Maintained for backwards compatibility."""
+        self.set_component_properties(comp_name, {prop: value})
+
+    def set_component_properties(self, comp_name: str, payload: Dict[str, Any]) -> None:
+        """Atomic payload execution for immediate entity state synchronization."""
         if self.scene.selected_index < 0: return
         ent = self.scene.entities[self.scene.selected_index]
         
         if comp_name == "Entity": 
-            setattr(ent, prop, value)
+            for prop, value in payload.items():
+                setattr(ent, prop, value)
             return
             
         comp_class = self._COMPONENT_MAP.get(comp_name)
@@ -161,20 +166,25 @@ class SceneManager:
         if not comp: return
 
         if comp_name == "Animation":
-            self.animation.handle_animation_property(ent, comp, prop, value)
+            for prop, value in payload.items():
+                self.animation.handle_animation_property(ent, comp, prop, value)
             return
+            
         if comp_name == "Semantic":
-            self.semantic.handle_semantic_property(ent, comp, prop, value)
+            for prop, value in payload.items():
+                self.semantic.handle_semantic_property(ent, comp, prop, value)
             return
 
-        if comp_name == "Transform" and prop in ["position", "rotation", "scale"]:
-            setattr(comp, prop, glm.vec3(*value))
-            if prop == "rotation": comp.quat_rot = glm.quat(glm.radians(comp.rotation))
-            comp.sync_from_gui()
-        elif prop.startswith("mat_"): 
-            setattr(comp.material, prop[4:], glm.vec3(*value) if isinstance(value, list) else value)
-        else: 
-            setattr(comp, prop, glm.vec3(*value) if isinstance(value, list) and len(value) == 3 else value)
+        for prop, value in payload.items():
+            if comp_name == "Transform" and prop in ["position", "rotation", "scale"]:
+                setattr(comp, prop, glm.vec3(*value))
+                if prop == "rotation": 
+                    comp.quat_rot = glm.quat(glm.radians(comp.rotation))
+                comp.sync_from_gui()
+            elif prop.startswith("mat_"): 
+                setattr(comp.material, prop[4:], glm.vec3(*value) if isinstance(value, list) else value)
+            else: 
+                setattr(comp, prop, glm.vec3(*value) if isinstance(value, list) and len(value) == 3 else value)
 
     def toggle_visibility_selected(self) -> None:
         if self.scene.selected_index >= 0:
@@ -230,7 +240,6 @@ class SceneManager:
                     t_id = semantic.track_id
                     c_id = semantic.class_id
                     
-                    # [CRITICAL MERGE LOGIC FIX]: 
                     # Strictly segregate bounding boxes using both Track ID AND Class ID.
                     # This isolates objects if they are grouped but have different semantic labels.
                     merge_key = f"{t_id}_{c_id}"
@@ -249,7 +258,7 @@ class SceneManager:
         return list(merged_bboxes.values())
 
     # =========================================================================
-    # RESOURCE & FACADE ROUTING (Omitted unmodified code for brevity...)
+    # RESOURCE & FACADE ROUTING
     # =========================================================================
 
     def load_texture_to_selected(self, map_attr: str, filepath: str) -> None:
@@ -333,5 +342,11 @@ class SceneManager:
     def get_animation_info(self) -> dict: return self.animation.get_animation_info()
     def set_active_keyframe(self, index: int) -> float: return self.animation.set_active_keyframe(index)
     def sync_gizmo_to_keyframe(self, current_time: float) -> bool: return self.animation.sync_gizmo_to_keyframe(current_time)
-    def update_keyframe_property(self, current_time: float, comp_name: str, prop: str, value: Any) -> tuple: return self.animation.update_keyframe_property(current_time, comp_name, prop, value)
+    
+    def update_keyframe_property(self, current_time: float, comp_name: str, prop: str, value: Any) -> tuple: 
+        return self.animation.update_keyframe_property(current_time, comp_name, prop, value)
+        
+    def update_keyframe_properties(self, current_time: float, comp_name: str, payload: Dict[str, Any]) -> tuple: 
+        return self.animation.update_keyframe_properties(current_time, comp_name, payload)
+        
     def add_and_focus_keyframe(self, time: float) -> int: return self.animation.add_and_focus_keyframe(time)

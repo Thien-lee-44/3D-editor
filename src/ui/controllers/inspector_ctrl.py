@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Dict
 from src.app import ctx, AppEvent
 from src.ui.error_handler import safe_execute
 from src.ui.views.panels.inspector_view import InspectorPanelView
@@ -6,12 +6,12 @@ from src.ui.views.panels.inspector_view import InspectorPanelView
 class InspectorController:
     """
     Coordinates data flow for the Properties (Inspector) panel.
-    Delegates complex logic (Auto-Keying, Index Shifting) to the Engine Facade,
-    ensuring strict synchronization between UI, live components, and keyframes.
+    Utilizes Atomic Transactions (set_properties) to eliminate event storming 
+    and maintain strict UI-Engine synchronization without latency.
     """
     def __init__(self) -> None:
         self.view = InspectorPanelView(controller=self)
-        self._is_updating_ui = False  # Critical guard to prevent infinite UI echo loops
+        self._is_updating_ui = False  
         
         ctx.events.subscribe(AppEvent.ENTITY_SELECTED, self.on_entity_selected)
         ctx.events.subscribe(AppEvent.TRANSFORM_FAST_UPDATED, self.on_fast_transform_update)
@@ -51,7 +51,7 @@ class InspectorController:
         timeline = getattr(ctx.main_window._controller, 'timeline_ctrl', None) if hasattr(ctx, 'main_window') else None
         curr_time = timeline.current_time if timeline else 0.0
         
-        is_new_kf, target_time = ctx.engine.sync_gizmo_to_keyframe(curr_time)
+        is_new_kf, target_time = ctx.engine.sync_gizmo_to_keyframe(curr_time, is_hud_drag=True)
         
         if timeline:
             if is_new_kf:
@@ -66,18 +66,27 @@ class InspectorController:
 
     @safe_execute(context="Modify Property")
     def set_property(self, comp_name: str, prop: str, value: Any) -> None:
+        """Legacy singular fallback for isolated UI components."""
+        self.set_properties(comp_name, {prop: value})
+
+    @safe_execute(context="Modify Properties Batch")
+    def set_properties(self, comp_name: str, payload: Dict[str, Any]) -> None:
+        """
+        Executes an atomic transaction for multiple property assignments.
+        Guarantees that 1 UI interaction creates exactly 1 render cycle and 1 keyframe snapshot.
+        """
         if self._is_updating_ui: 
-            return # Block programmatic value changes from triggering Auto-Keying
+            return 
             
         self.request_undo_snapshot()
         
         timeline = getattr(ctx.main_window._controller, 'timeline_ctrl', None) if hasattr(ctx, 'main_window') else None
         curr_time = timeline.current_time if timeline else 0.0
         
-        is_kf_mode, is_new_kf, target_time = ctx.engine.update_keyframe_property(curr_time, comp_name, prop, value)
+        is_kf_mode, is_new_kf, target_time = ctx.engine.update_keyframe_properties(curr_time, comp_name, payload)
         
         if not is_kf_mode:
-            ctx.engine.set_component_property(comp_name, prop, value)
+            ctx.engine.set_component_properties(comp_name, payload)
         else:
             if timeline:
                 if is_new_kf:
@@ -92,7 +101,7 @@ class InspectorController:
         if comp_name == "Animation" or is_new_kf:
             self.refresh_inspector()
 
-    @safe_execute(context="Select Keyframe From Inspector")
+    @safe_execute(context="Select Keyframe")
     def select_keyframe_from_inspector(self, index: int) -> None:
         if hasattr(ctx, 'main_window') and hasattr(ctx.main_window, '_controller'):
             timeline = getattr(ctx.main_window._controller, 'timeline_ctrl', None)
@@ -118,7 +127,7 @@ class InspectorController:
     def remove_keyframe(self, index: int) -> None:
         if self._is_updating_ui: return
         self.request_undo_snapshot()
-        ctx.engine.set_component_property("Animation", "REMOVE_KEYFRAME", index)
+        ctx.engine.set_component_properties("Animation", {"REMOVE_KEYFRAME": index})
         ctx.events.emit(AppEvent.SCENE_CHANGED)
         self.refresh_inspector()
 
@@ -138,7 +147,7 @@ class InspectorController:
                     timeline.set_time(time)
                     return
 
-            ctx.engine.set_component_property("Animation", "MOVE_KEYFRAME", {"index": active_idx, "time": time})
+            ctx.engine.set_component_properties("Animation", {"MOVE_KEYFRAME": {"index": active_idx, "time": time}})
             ctx.events.emit(AppEvent.COMPONENT_PROPERTY_CHANGED)
             ctx.events.emit(AppEvent.SCENE_CHANGED)
 
@@ -165,7 +174,19 @@ class InspectorController:
         if self._is_updating_ui: return
         self.request_undo_snapshot()
         idx = ctx.engine.get_selected_entity_id()
+        
         ctx.engine.reset_entity_transform(idx)
+        
+        timeline = getattr(ctx.main_window._controller, 'timeline_ctrl', None) if hasattr(ctx, 'main_window') else None
+        curr_time = timeline.current_time if timeline else 0.0
+        
+        payload = {
+            "position": [0.0, 0.0, 0.0],
+            "rotation": [0.0, 0.0, 0.0],
+            "scale": [1.0, 1.0, 1.0]
+        }
+        ctx.engine.update_keyframe_properties(curr_time, "Transform", payload)
+        
         ctx.events.emit(AppEvent.SCENE_CHANGED)
         self.refresh_inspector()
 
@@ -177,16 +198,16 @@ class InspectorController:
         timeline = getattr(ctx.main_window._controller, 'timeline_ctrl', None) if hasattr(ctx, 'main_window') else None
         curr_time = timeline.current_time if timeline else 0.0
         
-        is_kf_y, is_new_y, t_y = ctx.engine.update_keyframe_property(curr_time, "Light", "yaw", yaw)
-        is_kf_p, is_new_p, t_p = ctx.engine.update_keyframe_property(curr_time, "Light", "pitch", pitch)
+        payload = {"yaw": yaw, "pitch": pitch}
+        is_kf, is_new, target_time = ctx.engine.update_keyframe_properties(curr_time, "Light", payload)
         
-        if timeline and (is_kf_y or is_kf_p):
-            if is_new_y or is_new_p:
+        if timeline and is_kf:
+            if is_new:
                 timeline._refresh_dope_sheet()
-            if abs(timeline.current_time - t_y) > 0.001:
-                timeline.set_time(t_y)
+            if abs(timeline.current_time - target_time) > 0.001:
+                timeline.set_time(target_time)
             elif hasattr(ctx.engine, 'animator'):
-                ctx.engine.animator.evaluate(t_y, 0.0)
+                ctx.engine.animator.evaluate(target_time, 0.0)
                 
         ctx.events.emit(AppEvent.SCENE_CHANGED)
 
@@ -196,9 +217,10 @@ class InspectorController:
         self.request_undo_snapshot()
         timeline = getattr(ctx.main_window._controller, 'timeline_ctrl', None) if hasattr(ctx, 'main_window') else None
         curr_time = timeline.current_time if timeline else 0.0
+        
         if curr_time > 0.01 and hasattr(ctx.engine, 'animator'):
-            # Prime animation state before mutating material to preserve base snapshot.
             ctx.engine.animator.evaluate(curr_time, 0.0)
+            
         if hasattr(ctx, 'main_window') and hasattr(ctx.main_window, 'gl_widget'):
             ctx.main_window.gl_widget.makeCurrent()
             ctx.engine.load_texture_to_selected(map_attr, filepath)
@@ -209,8 +231,8 @@ class InspectorController:
         data = ctx.engine.get_selected_entity_data()
         
         if data and "mesh" in data and "mat_tex_paths" in data["mesh"]:
-            is_kf, is_new, t_time = ctx.engine.update_keyframe_property(
-                curr_time, "Mesh", "mat_tex_paths", data["mesh"]["mat_tex_paths"]
+            is_kf, is_new, t_time = ctx.engine.update_keyframe_properties(
+                curr_time, "Mesh", {"mat_tex_paths": data["mesh"]["mat_tex_paths"]}
             )
             if timeline and is_kf:
                 if is_new: 
@@ -229,16 +251,17 @@ class InspectorController:
         self.request_undo_snapshot()
         timeline = getattr(ctx.main_window._controller, 'timeline_ctrl', None) if hasattr(ctx, 'main_window') else None
         curr_time = timeline.current_time if timeline else 0.0
+        
         if curr_time > 0.01 and hasattr(ctx.engine, 'animator'):
-            # Prime animation state before mutating material to preserve base snapshot.
             ctx.engine.animator.evaluate(curr_time, 0.0)
+            
         ctx.engine.remove_texture_from_selected(map_attr)
 
         data = ctx.engine.get_selected_entity_data()
         
         if data and "mesh" in data and "mat_tex_paths" in data["mesh"]:
-            is_kf, is_new, t_time = ctx.engine.update_keyframe_property(
-                curr_time, "Mesh", "mat_tex_paths", data["mesh"]["mat_tex_paths"]
+            is_kf, is_new, t_time = ctx.engine.update_keyframe_properties(
+                curr_time, "Mesh", {"mat_tex_paths": data["mesh"]["mat_tex_paths"]}
             )
             if timeline and is_kf:
                 if is_new: 

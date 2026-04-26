@@ -33,6 +33,7 @@ class ResourceManager:
                     "mat_unlit": Shader(str(SHADERS_DIR / "materials" / "mat_unlit.vert"), str(SHADERS_DIR / "materials" / "mat_unlit.frag")),
                     "pass_depth": Shader(str(SHADERS_DIR / "passes" / "pass_depth.vert"), str(SHADERS_DIR / "passes" / "pass_depth.frag")),
                     "pass_picking": Shader(str(SHADERS_DIR / "passes" / "pass_picking.vert"), str(SHADERS_DIR / "passes" / "pass_picking.frag")),
+                    "pass_shadow": Shader(str(SHADERS_DIR / "passes" / "pass_shadow.vert"), str(SHADERS_DIR / "passes" / "pass_shadow.frag")),
                     "editor_solid": Shader(str(SHADERS_DIR / "editor" / "editor_solid.vert"), str(SHADERS_DIR / "editor" / "editor_solid.frag")),
                     "editor_proxy": Shader(str(SHADERS_DIR / "editor" / "editor_proxy.vert"), str(SHADERS_DIR / "editor" / "editor_proxy.frag"))
                 }

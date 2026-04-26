@@ -2,24 +2,32 @@ from typing import Dict, Any
 
 class SemanticComponent:
     """
-    Stores Ground Truth semantic data for AI dataset generation (YOLO/COCO).
-    Strictly decoupled from Animation to enforce the Single Responsibility Principle.
+    Stores Ground Truth semantic data for AI dataset generation.
+    Includes boundary flags and propagation rules for hierarchical evaluation.
     """
     def __init__(self, track_id: int = -1, class_id: int = 0) -> None:
-        # Unique instance ID used to merge sub-meshes into a single bounding box
         self.track_id: int = track_id
-        
-        # Category ID (e.g., 0: Car, 1: Pedestrian)
         self.class_id: int = class_id  
+        
+        self.is_merged_instance: bool = True
+        self.propagate_to_children: bool = True
+        
+        self.entity = None
 
     def serialize(self) -> Dict[str, Any]:
-        """Packages the semantic data into a JSON-compatible dictionary."""
+        """Packages semantic data into a UI-agnostic payload."""
+        is_group = getattr(self.entity, "is_group", False) if self.entity else False
         return {
             "track_id": self.track_id,
-            "class_id": self.class_id
+            "class_id": self.class_id,
+            "is_merged_instance": getattr(self, "is_merged_instance", True),
+            "propagate_to_children": getattr(self, "propagate_to_children", True),
+            "is_group": is_group
         }
 
     def deserialize(self, data: Dict[str, Any]) -> None:
-        """Reconstructs the semantic component state from a JSON payload."""
+        """Reconstructs component state from JSON."""
         self.track_id = data.get("track_id", -1)
         self.class_id = data.get("class_id", 0)
+        self.is_merged_instance = data.get("is_merged_instance", True)
+        self.propagate_to_children = data.get("propagate_to_children", True)

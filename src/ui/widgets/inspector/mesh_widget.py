@@ -174,12 +174,15 @@ class MeshWidget(BaseComponentWidget):
 
     def apply_mesh(self) -> None:
         if not self._controller: return
-        self._controller.set_property("Mesh", "visible", self.chk_visible.isChecked())
-        self._controller.set_property("Mesh", "mat_ambient_strength", self.sp_mat_amb.value())
-        self._controller.set_property("Mesh", "mat_diffuse_strength", self.sp_mat_diff.value())
-        self._controller.set_property("Mesh", "mat_specular_strength", self.sp_mat_spec.value())
-        self._controller.set_property("Mesh", "mat_shininess", self.sp_shine.value())
-        self._controller.set_property("Mesh", "mat_opacity", self.sp_opacity.value())
+        payload = {
+            "visible": self.chk_visible.isChecked(),
+            "mat_ambient_strength": self.sp_mat_amb.value(),
+            "mat_diffuse_strength": self.sp_mat_diff.value(),
+            "mat_specular_strength": self.sp_mat_spec.value(),
+            "mat_shininess": self.sp_shine.value(),
+            "mat_opacity": self.sp_opacity.value()
+        }
+        self._controller.set_properties("Mesh", payload)
 
     def apply_mat_vec_colors(self) -> None:
         if not self._controller: return
@@ -189,11 +192,14 @@ class MeshWidget(BaseComponentWidget):
         spec_c = [s.value() for s in self.sp_mat_spec_vec]
         emis_c = [s.value() for s in self.sp_mat_emis_vec]
         
-        self._controller.set_property("Mesh", "mat_base_color", base_c)
-        self._controller.set_property("Mesh", "mat__ambient", amb_c)
-        self._controller.set_property("Mesh", "mat__diffuse", diff_c)
-        self._controller.set_property("Mesh", "mat__specular", spec_c)
-        self._controller.set_property("Mesh", "mat_emission", emis_c)
+        payload = {
+            "mat_base_color": base_c,
+            "mat__ambient": amb_c,
+            "mat__diffuse": diff_c,
+            "mat__specular": spec_c,
+            "mat_emission": emis_c
+        }
+        self._controller.set_properties("Mesh", payload)
         
         self.btn_mat_base.setStyleSheet(rgb_to_hex(base_c))
         self.btn_mat_amb.setStyleSheet(rgb_to_hex(amb_c))
@@ -203,7 +209,7 @@ class MeshWidget(BaseComponentWidget):
 
     def switch_mat_mode(self, idx: int) -> None:
         if not self._controller: return
-        self._controller.set_property("Mesh", "mat_use_advanced_mode", idx == 1)
+        self._controller.set_properties("Mesh", {"mat_use_advanced_mode": idx == 1})
         self.w_mat_basic.setVisible(idx == 0)
         self.w_mat_adv.setVisible(idx == 1)
 
@@ -228,8 +234,7 @@ class MeshWidget(BaseComponentWidget):
         
         if new_c is not None and self._controller:
             self.request_undo_snapshot()
-            
-            self._controller.set_property("Mesh", prop_name, new_c)
+            self._controller.set_properties("Mesh", {prop_name: new_c})
             
             vec_map = {
                 'base': self.sp_mat_base_vec, 
@@ -248,7 +253,6 @@ class MeshWidget(BaseComponentWidget):
             
             set_vec3_spinboxes(vec_map[c_type], new_c)
             btn_map[c_type].setStyleSheet(rgb_to_hex(new_c))
-            
             ctx.events.emit(AppEvent.SCENE_CHANGED)
 
     def load_texture_map(self, map_attr: str) -> None:

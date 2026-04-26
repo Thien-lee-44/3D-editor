@@ -5,21 +5,18 @@ from typing import List, Dict, Any, Optional
 class Keyframe:
     """
     Represents a discrete snapshot of an entity's state at a specific point in time.
-    State bag is purely populated via Component native to_dict() serialization, 
-    making it implicitly JSON-compatible and completely DRY.
+    State bag is populated via Component native to_dict() serialization.
     """
     def __init__(self, time: float) -> None:
         self.time: float = time
         self.state: Dict[str, Dict[str, Any]] = {}
 
     def clone(self) -> 'Keyframe':
-        """Creates a deep copy of this keyframe state for duplication."""
         new_kf = Keyframe(self.time)
         new_kf.state = copy.deepcopy(self.state)
         return new_kf
 
     def serialize(self) -> Dict[str, Any]:
-        """Packages the keyframe data natively."""
         return {
             "time": self.time, 
             "state": copy.deepcopy(self.state)
@@ -27,7 +24,6 @@ class Keyframe:
 
     @staticmethod
     def deserialize(data: Dict[str, Any]) -> 'Keyframe':
-        """Reconstructs a Keyframe instance directly from a native dictionary."""
         kf = Keyframe(data.get("time", 0.0))
         kf.state = copy.deepcopy(data.get("state", {}))
         return kf
@@ -48,10 +44,6 @@ class AnimationComponent:
         self.active_keyframe_index: int = -1 
         self.velocity: glm.vec3 = glm.vec3(0.0)
         self.angular_velocity: glm.vec3 = glm.vec3(0.0)
-        
-        # Temporary RAM cache for the Base State (t=0). 
-        # NOT saved to JSON. Used dynamically by Animator during playback.
-        self._base_state_cache: Dict[str, Dict[str, Any]] = {}
 
     def add_keyframe(self, keyframe: Keyframe) -> None:
         self.keyframes.append(keyframe)
@@ -122,5 +114,3 @@ class AnimationComponent:
         self._sort_and_update_duration()
         self.velocity = glm.vec3(*data.get("vel", [0.0, 0.0, 0.0]))
         self.angular_velocity = glm.vec3(*data.get("ang_vel", [0.0, 0.0, 0.0]))
-        
-        self._base_state_cache = {}

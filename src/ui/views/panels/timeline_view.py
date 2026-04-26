@@ -71,18 +71,12 @@ class TimelinePanelView(BasePanel):
         layout.addWidget(QLabel("/"))
         layout.addWidget(self.spn_max_time)
         
-        self.btn_render = QPushButton("Render Animation")
-        self.btn_render.setStyleSheet("background-color: #d83b01; color: white; font-weight: bold; margin-left: 20px;")
-        self.btn_render.setCursor(Qt.PointingHandCursor)
-        
-        layout.addWidget(self.btn_render)
         self.main_layout.addLayout(layout)
 
         self.btn_play.clicked.connect(self._request_play_toggle)
         self.btn_rewind.clicked.connect(self._request_rewind)
         self.btn_add_key.clicked.connect(self._request_add_key)
         self.btn_clear_key.clicked.connect(self._request_clear_key)
-        self.btn_render.clicked.connect(self._request_render)
         self.spn_time.valueChanged.connect(self._on_spin_changed)
         self.spn_max_time.valueChanged.connect(self._on_max_time_changed)
 
@@ -108,8 +102,8 @@ class TimelinePanelView(BasePanel):
         
         self.ruler.time_scrubbed.connect(self._on_scrubbed)
         self.track.time_scrubbed.connect(self._on_scrubbed)
-        self.track.keyframe_moved.connect(self._on_kf_moved)
         self.track.keyframe_selected.connect(self._on_kf_selected)
+        self.track.keyframes_mutated.connect(self._on_kfs_mutated)
 
     # =========================================================================
     # DELEGATES
@@ -122,7 +116,7 @@ class TimelinePanelView(BasePanel):
 
     def _request_rewind(self) -> None:
         if self._controller:
-            self._controller.set_time(0.0)
+            self._controller.rewind_timeline()
 
     def _request_add_key(self) -> None:
         if self._controller:
@@ -131,10 +125,6 @@ class TimelinePanelView(BasePanel):
     def _request_clear_key(self) -> None:
         if self._controller:
             self._controller.clear_keyframes()
-
-    def _request_render(self) -> None:
-        if self._controller:
-            self._controller.open_render_settings()
 
     def _on_scrubbed(self, val: float) -> None:
         if self._controller and not self._controller.is_updating_ui:
@@ -148,9 +138,9 @@ class TimelinePanelView(BasePanel):
         self.ruler.set_max_time(val)
         self.track.set_max_time(val)
 
-    def _on_kf_moved(self, index: int, new_time: float) -> None:
+    def _on_kfs_mutated(self, payload: dict) -> None:
         if self._controller:
-            self._controller.move_keyframe(index, new_time)
+            self._controller.mutate_keyframes(payload)
 
     def _on_kf_selected(self, index: int) -> None:
         if self._controller:
@@ -161,8 +151,7 @@ class TimelinePanelView(BasePanel):
     # =========================================================================
 
     def deselect_keyframe_ui(self) -> None:
-        """Forces the track UI to drop active keyframe focus highlighting."""
-        self.track.selected_kf_index = -1
+        self.track.selected_indices.clear()
         self.track.update()
 
     def update_ui_time(self, time_sec: float) -> None:
@@ -183,4 +172,5 @@ class TimelinePanelView(BasePanel):
 
     def update_keyframes_display(self, kf_times: List[float], entity_name: str = "") -> None:
         self.track.set_keyframes(kf_times)
-        self.track_header.set_target_name(entity_name)
+        if entity_name:
+            self.track_header.set_target_name(entity_name)

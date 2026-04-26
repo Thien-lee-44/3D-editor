@@ -20,8 +20,7 @@ class HeaderWidget(BaseComponentWidget):
     def apply_name(self) -> None:
         if not self._controller: return
         self.request_undo_snapshot() 
-        self._controller.set_property("Entity", "name", self.txt_name.text().strip())
+        self._controller.set_properties("Entity", {"name": self.txt_name.text().strip()})
         
-        # Emit Event to notify the software that the name changed, forcing the Hierarchy tree to rebuild
         from src.app import ctx, AppEvent
         ctx.events.emit(AppEvent.HIERARCHY_NEEDS_REFRESH)

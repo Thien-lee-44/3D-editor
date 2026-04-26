@@ -9,14 +9,12 @@ from src.engine.graphics.buffer_objects import BufferObject
 
 from src.engine.scene.components.animation_cmp import AnimationComponent
 from src.engine.scene.components.semantic_cmp import SemanticComponent
-from src.engine.synthetic.tracking_mgr import TrackingManager
 
 from src.app.exceptions import SimulationError, ResourceError
 from src.app.config import (
     MAX_LIGHTS, DEFAULT_GROUP_NAME, DEFAULT_PROXY_SCALE,
     DEFAULT_CAMERA_NAME, DEFAULT_SCENE_CAM_POS, DEFAULT_SCENE_LIGHT_ROT
 )
-
 
 class EntityFactory:
     """
@@ -31,33 +29,21 @@ class EntityFactory:
         """Grants the entity the ability to be keyframed over time."""
         ent.add_component(AnimationComponent())
 
-    def _attach_semantic(self, ent: Entity, class_id: int = 0, track_id: Optional[int] = None) -> int:
+    def _attach_semantic(self, ent: Entity, class_id: int = 0) -> None:
         """
         Grants the entity Ground Truth tracking data for AI dataset generation.
-        Returns the assigned track_id to propagate to child entities (Semantic Inheritance).
+        Tracking IDs are exclusively evaluated dynamically at render time.
         """
-        if track_id is None:
-            track_id = TrackingManager.get_next_id()
-            
-        ent.add_component(SemanticComponent(track_id=track_id, class_id=class_id))
-        return track_id
-
-    # =========================================================================
-    # SCENE BOOTSTRAPPING
-    # =========================================================================
+        ent.add_component(SemanticComponent(class_id=class_id))
 
     def setup_default_scene(self) -> None:
-        """Bootstraps the mandatory viewing frustum, lighting, and default geometry."""
-        
-        # 1. Default Camera
         cam = Entity(DEFAULT_CAMERA_NAME)
         tf = cam.add_component(TransformComponent())
         tf.position = glm.vec3(*DEFAULT_SCENE_CAM_POS)
         tf.scale = glm.vec3(DEFAULT_PROXY_SCALE) 
-        tf.locked_axes["scl"] = True  # [CONSTRAINT]
+        tf.locked_axes["scl"] = True  
         
         self._attach_animation(cam)
-        
         cam_comp = CameraComponent(mode="Perspective")
         cam_comp.is_active = True 
         cam.add_component(cam_comp)
@@ -76,7 +62,6 @@ class EntityFactory:
                 
         self.scene.add_entity(cam)
 
-        # 2. Default Light
         light = Entity("Directional Light")
         tf = light.add_component(TransformComponent())
         tf.rotation = glm.vec3(*DEFAULT_SCENE_LIGHT_ROT)
@@ -86,7 +71,6 @@ class EntityFactory:
         light.add_component(LightComponent(light_type="Directional"))
         self.scene.add_entity(light)
 
-        # 3. Default Cube
         cube_entity = Entity("Default Cube")
         cube_entity.add_component(TransformComponent())
         
@@ -100,12 +84,7 @@ class EntityFactory:
             
         self.scene.add_entity(cube_entity)
         
-    # =========================================================================
-    # ENTITY SPAWNING
-    # =========================================================================
-    
     def add_empty_group(self) -> None:
-        """Spawns an empty transform node primarily used for hierarchical grouping."""
         ent = Entity(DEFAULT_GROUP_NAME, is_group=True)
         ent.add_component(TransformComponent())
         
@@ -115,7 +94,6 @@ class EntityFactory:
         self.scene.add_entity(ent)
 
     def spawn_primitive(self, name: str, is_2d: bool) -> None:
-        """Instantiates an entity equipped with a foundational geometric mesh."""
         geom = PrimitivesManager.get_primitive(name, is_2d)
         
         if geom:
@@ -134,7 +112,6 @@ class EntityFactory:
             self.scene.add_entity(ent)
 
     def spawn_math_surface(self, formula: str, xmin: float, xmax: float, ymin: float, ymax: float, res: int) -> None:
-        """Instantiates an entity rendering a procedurally generated mathematical surface."""
         from src.engine.geometry.math_surface import MathSurface
         
         ent = Entity(f"Math: {formula}")
@@ -151,7 +128,6 @@ class EntityFactory:
         self.scene.add_entity(ent)
 
     def add_light(self, light_type: str, proxy_enabled: bool, global_light_on: bool) -> None:
-        """Instantiates a light source. Lights are NEVER given a SemanticComponent."""
         current_count = sum(1 for _, l, _ in self.scene.cached_lights if l.type == light_type)
         limit = MAX_LIGHTS.get(light_type, 0)
         
@@ -171,7 +147,6 @@ class EntityFactory:
             renderer.is_proxy = True
             renderer.visible = proxy_enabled
 
-            # Lock only proxy transform modes (do not lock regular entities/groups)
             if light_type == "Point":
                 tf.locked_axes["rot"] = True
                 tf.locked_axes["scl"] = True
@@ -188,13 +163,11 @@ class EntityFactory:
         self.scene.add_entity(ent)
 
     def add_camera(self, proxy_enabled: bool) -> None:
-        """Instantiates an auxiliary view frustum. Cameras are NEVER given a SemanticComponent."""
         ent = Entity("Camera")
         tf = ent.add_component(TransformComponent())
-        tf.locked_axes["scl"] = True  # [CONSTRAINT]
+        tf.locked_axes["scl"] = True
         
         self._attach_animation(ent) 
-        
         cam = ent.add_component(CameraComponent(mode="Perspective"))
         cam.is_active = not any(e.get_component(CameraComponent) for e in self.scene.entities)
         
@@ -207,12 +180,6 @@ class EntityFactory:
         self.scene.add_entity(ent)
 
     def spawn_model_from_path(self, path: str) -> None:
-        """
-        Parses a 3D asset and assembles a hierarchical structure.
-        Automatically calculates the group center to align Gizmos with the collective children.
-        Optimized to reuse cached OpenGL BufferObjects directly, preventing memory leaks 
-        and fixing disappearing mesh bugs.
-        """
         try:
             mesh_data_list = ResourceManager.get_model(path)
             raw_name = os.path.splitext(os.path.basename(path))[0]
@@ -240,9 +207,8 @@ class EntityFactory:
             master_tf.position = master_center 
             
             self._attach_animation(master_ent)
-            master_track_id = self._attach_semantic(master_ent, class_id=0)
+            self._attach_semantic(master_ent, class_id=0)
             
-            # [CRITICAL FIX]: Collect all structured entities first before flushing to Scene
             entities_to_add = [master_ent]
 
             for g_name, meshes in buckets.items():
@@ -258,7 +224,7 @@ class EntityFactory:
                 obj_tf.position = obj_world_center - master_center
                 
                 self._attach_animation(obj_ent)
-                obj_track_id = self._attach_semantic(obj_ent, class_id=0, track_id=master_track_id)
+                self._attach_semantic(obj_ent, class_id=0)
                 
                 master_ent.add_child(obj_ent, keep_world=False)
                 entities_to_add.append(obj_ent)
@@ -270,12 +236,9 @@ class EntityFactory:
                         child_tf.position = glm.vec3(*sub_data.pivot_offset) - obj_world_center
                         
                         self._attach_animation(child_ent)
-                        self._attach_semantic(child_ent, class_id=0, track_id=obj_track_id)
+                        self._attach_semantic(child_ent, class_id=0)
                         
                         renderer = child_ent.add_component(MeshRenderer())
-                        
-                        # [CRITICAL FIX]: Directly reference the cached Geometry.
-                        # Do NOT call BufferObject() here, as it duplicates RAM/VRAM and crashes GL State.
                         renderer.geometry = sub_data 
                         
                         if hasattr(sub_data, 'materials') and 'default_active' in sub_data.materials:
@@ -285,14 +248,11 @@ class EntityFactory:
                         entities_to_add.append(child_ent)
                     else:
                         renderer = obj_ent.add_component(MeshRenderer())
-                        
-                        # [CRITICAL FIX]: Directly reference the cached Geometry.
                         renderer.geometry = sub_data
                         
                         if hasattr(sub_data, 'materials') and 'default_active' in sub_data.materials:
                             renderer.material.setup_from_dict(sub_data.materials['default_active'])
 
-            # Dispatch all newly assembled entities to the Scene in a synchronized batch
             for ent in entities_to_add:
                 self.scene.add_entity(ent)
 

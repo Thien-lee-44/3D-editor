@@ -3,7 +3,6 @@ from PySide6.QtWidgets import QFormLayout, QPushButton, QCheckBox, QComboBox, QL
 from src.ui.widgets.custom_inputs import SliderSpinBox
 from .base_widget import BaseComponentWidget
 
-# Import SSOT configuration
 from src.app.config import (
     DEFAULT_CAMERA_FOV, DEFAULT_CAMERA_NEAR, DEFAULT_CAMERA_FAR,
     CAMERA_FOV_RANGE, CAMERA_FOV_STEP, CAMERA_ORTHO_RANGE, 
@@ -99,7 +98,6 @@ class CameraWidget(BaseComponentWidget):
     def set_active_camera(self) -> None:
         if not self._controller: return
         self.request_undo_snapshot()
-        # This function calls ctx directly because the operation is closely related to the Engine
         from src.app import ctx, AppEvent
         ctx.engine.set_active_camera_selected()
         ctx.events.emit(AppEvent.ENTITY_SELECTED, ctx.engine.get_selected_entity_id())
@@ -116,11 +114,14 @@ class CameraWidget(BaseComponentWidget):
         self.lbl_cam_ortho.setVisible(not is_persp)
         self.sp_cam_ortho.setVisible(not is_persp)
 
-        self._controller.set_property("Camera", "mode", mode)
-        self._controller.set_property("Camera", "fov", self.sp_cam_fov.value())
-        self._controller.set_property("Camera", "ortho_size", self.sp_cam_ortho.value())
-        self._controller.set_property("Camera", "near", self.sp_cam_near.value())
-        self._controller.set_property("Camera", "far", self.sp_cam_far.value())
+        payload = {
+            "mode": mode,
+            "fov": self.sp_cam_fov.value(),
+            "ortho_size": self.sp_cam_ortho.value(),
+            "near": self.sp_cam_near.value(),
+            "far": self.sp_cam_far.value()
+        }
+        self._controller.set_properties("Camera", payload)
 
         if self.chk_cam_proxy.isEnabled(): 
-            self._controller.set_property("Mesh", "visible", self.chk_cam_proxy.isChecked())
+            self._controller.set_properties("Mesh", {"visible": self.chk_cam_proxy.isChecked()})

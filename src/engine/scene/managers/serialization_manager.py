@@ -32,6 +32,8 @@ class SerializationManager:
             ent = self._deserialize_entity(ent_data)
             self.scene_mgr._add_entity_recursive(ent)
 
+        self._sync_cameras_aspect(current_aspect)
+
     def save_project(self, file_path: str, metadata: Dict[str, Any]) -> None:
         data = {
             "metadata": metadata,
@@ -73,8 +75,30 @@ class SerializationManager:
         for ent_data in data.get("entities", []):
             ent = self._deserialize_entity(ent_data)
             self.scene_mgr._add_entity_recursive(ent)
+
+    
+        self._sync_cameras_aspect(current_aspect)
             
         return data.get("metadata", {})
+
+    def _sync_cameras_aspect(self, current_aspect: float) -> None:
+        """Đệ quy để ép toàn bộ Camera nhận Aspect Ratio của UI, tránh méo hình lúc mới Load."""
+        def update_recursive(entity: Entity) -> None:
+            cam = entity.get_component(CameraComponent)
+            if cam:
+                if hasattr(cam, 'aspect_ratio'):
+                    cam.aspect_ratio = current_aspect
+                else:
+                    cam.aspect = current_aspect
+                if hasattr(cam, 'update_projection_matrix'):
+                    cam.update_projection_matrix()
+                    
+            for child in entity.children:
+                update_recursive(child)
+                
+        for ent in self.scene.entities:
+            if ent.parent is None:
+                update_recursive(ent)
 
     def export_scene_obj(self, export_dir: str) -> None:
         from src.engine.resources.exporter import OBJExporter

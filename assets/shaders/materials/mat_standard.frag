@@ -5,6 +5,7 @@ in vec3 FragPos;
 in vec3 Normal;
 in vec2 TexCoords;
 in vec3 VertColor;
+in vec4 FragPosLightSpace;
 
 struct Material {
     vec3 ambient;
@@ -74,7 +75,31 @@ uniform sampler2D mapOpacity;   uniform int hasMapOpacity;
 uniform sampler2D mapBump;      uniform int hasMapBump;
 uniform sampler2D mapReflection;uniform int hasMapReflection;
 
-vec3 CalcDirLight(DirLight light, vec3 normal, vec3 viewDir, vec3 diffColor, vec3 specColor, vec3 ambientColor, float shine) {
+uniform sampler2D shadowMap;
+
+float ShadowCalculation(vec4 fragPosLightSpace, vec3 normal, vec3 lightDir) {
+    vec3 projCoords = fragPosLightSpace.xyz / fragPosLightSpace.w;
+    projCoords = projCoords * 0.5 + 0.5;
+    if(projCoords.z > 1.0) return 0.0;
+    
+    float currentDepth = projCoords.z;
+    vec3 n = normalize(normal);
+    vec3 l = normalize(-lightDir);
+    float bias = max(0.005 * (1.0 - dot(n, l)), 0.0005);
+    
+    float shadow = 0.0;
+    vec2 texelSize = 1.0 / textureSize(shadowMap, 0);
+    for(int x = -2; x <= 2; ++x) {
+        for(int y = -2; y <= 2; ++y) {
+            float pcfDepth = texture(shadowMap, projCoords.xy + vec2(x, y) * texelSize).r; 
+            shadow += currentDepth - bias > pcfDepth ? 1.0 : 0.0;        
+        }    
+    }
+    shadow /= 25.0;
+    return shadow;
+}
+
+vec3 CalcDirLight(DirLight light, vec3 normal, vec3 viewDir, vec3 diffColor, vec3 specColor, vec3 ambientColor, float shine, float shadow) {
     vec3 lightDir = normalize(-light.direction);
     float diff = max(dot(normal, lightDir), 0.0);
     
@@ -84,7 +109,8 @@ vec3 CalcDirLight(DirLight light, vec3 normal, vec3 viewDir, vec3 diffColor, vec
     vec3 ambient = light.ambient * ambientColor;
     vec3 diffuse = light.diffuse * diff * diffColor;
     vec3 specular = light.specular * spec * specColor;
-    return (ambient + diffuse + specular);
+    
+    return ambient + (1.0 - shadow) * (diffuse + specular);
 }
 
 vec3 CalcPointLight(PointLight light, vec3 normal, vec3 fragPos, vec3 viewDir, vec3 diffColor, vec3 specColor, vec3 ambientColor, float shine) {
@@ -190,8 +216,10 @@ void main() {
     vec3 result = vec3(0.0);
     
     if (combLight == 1) {
-        for(int i = 0; i < numDirLights; i++)
-            result += CalcDirLight(dirLights[i], norm, viewDir, baseColor, specColor, ambientBase, shine);
+        for(int i = 0; i < numDirLights; i++) {
+            float shadow = (i == 0) ? ShadowCalculation(FragPosLightSpace, norm, dirLights[i].direction) : 0.0;
+            result += CalcDirLight(dirLights[i], norm, viewDir, baseColor, specColor, ambientBase, shine, shadow);
+        }
         for(int i = 0; i < numPointLights; i++)
             result += CalcPointLight(pointLights[i], norm, FragPos, viewDir, baseColor, specColor, ambientBase, shine);
         for(int i = 0; i < numSpotLights; i++)

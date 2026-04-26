@@ -11,6 +11,7 @@ out vec3 FragPos;
 out vec3 Normal;
 out vec2 TexCoords;
 out vec3 VertColor;
+out vec4 FragPosLightSpace;
 
 uniform mat4 model;
 uniform mat4 view;
@@ -18,6 +19,8 @@ uniform mat4 projection;
 
 // Normal matrix required to invert non-uniform spatial scaling distortions
 uniform mat3 normalMatrix; 
+
+uniform mat4 lightSpaceMatrix;
 
 void main() {
     // Project geometry into absolute World-Space for accurate lighting calculations
@@ -36,4 +39,7 @@ void main() {
     } else {
         VertColor = aColor;
     }
+
+     // Transform fragment position to light's coordinate space for shadow comparison
+    FragPosLightSpace = lightSpaceMatrix * vec4(FragPos, 1.0);
 }
