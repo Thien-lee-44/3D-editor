@@ -63,6 +63,29 @@ pip install -r requirements.txt
 python run.py
 ```
 
+## BTL2 Synthetic Export Outputs
+
+The generator now exports all core artifacts expected by BTL2:
+
+- `images/*.jpg` (RGB frames)
+- `depth/*.png` and `depth/*.npy` (depth map visualization + raw depth array)
+- `masks/instance/*.png` and `masks/semantic/*.png`
+- `labels/*.txt` (YOLO detection)
+- `annotations/instances_coco.json` (COCO)
+- `annotations/voc/*.xml` (Pascal VOC, additional format)
+- `metadata/frames.json`, `metadata/frames.ndjson`, `metadata/objects.csv`
+- `annotations/export_manifest.json` (index of exported formats)
+
+## Run CV Benchmark from Preview UI
+
+In **Synthetic Data Preview** mode, use the right panel section **CV Benchmark (Preview)**:
+
+1. Select/confirm the dataset output directory (must contain `dataset.yaml`).
+2. Choose task (`auto`, `detect`, `segment`) and optional model.
+3. Click **RUN CV BENCHMARK (CURRENT DATASET)**.
+
+The UI shows benchmark metrics and artifact paths for summary/CSV/JSON plus GT-vs-Pred comparison outputs.
+
 ## User Guide & Controls
 
 ### Viewport Navigation

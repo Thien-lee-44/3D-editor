@@ -12,6 +12,7 @@ from src.app import ctx
 from src.ui.error_handler import safe_execute
 from src.ui.views.panels.generator_view import GeneratorPanelView
 from src.engine.synthetic.generator import SyntheticDataGenerator
+from src.engine.synthetic.cv_benchmark import CVBenchmarkRunner, CVBenchmarkConfig
 
 class GeneratorController:
     def __init__(self) -> None:
@@ -299,3 +300,100 @@ class GeneratorController:
             
         finally:
             self.view.set_ui_locked(False)
+
+    @safe_execute(context="CV Benchmark")
+    def handle_run_cv_benchmark(self) -> None:
+        self._ensure_backend()
+        self._ensure_preview_mode()
+
+        if self.is_playing:
+            self.stop_preview_playback()
+
+        settings = self.view.get_settings()
+        selected_output = str(settings.get("output_dir", "")).strip()
+        if selected_output:
+            dataset_dir = Path(selected_output).resolve()
+        else:
+            dataset_dir = self.generator_backend.output_dir.resolve()
+
+        dataset_yaml = dataset_dir / "dataset.yaml"
+        if not dataset_yaml.exists():
+            raise FileNotFoundError(
+                f"Missing dataset descriptor at:\n{dataset_yaml}\n"
+                "Please generate a dataset first in Preview mode."
+            )
+
+        task = str(settings.get("cv_task", "auto")).strip().lower()
+        model_name = str(settings.get("cv_model", "")).strip() or None
+        run_training = not bool(settings.get("cv_no_train", True))
+
+        benchmark_output = dataset_dir.parent / "cv_benchmark_ui" / datetime.now().strftime("%Y%m%d_%H%M%S")
+        variant_name = dataset_dir.name or "dataset"
+
+        config = CVBenchmarkConfig(
+            model_type=model_name,
+            task=task if task in {"auto", "detect", "segment"} else "auto",
+            epochs=max(1, int(settings.get("cv_epochs", 3))),
+            batch_size=max(1, int(settings.get("cv_batch", 8))),
+            imgsz=max(32, int(settings.get("cv_imgsz", 640))),
+            confidence_threshold=float(settings.get("cv_conf", 0.25)),
+            run_training=run_training,
+        )
+        runner = CVBenchmarkRunner(output_dir=benchmark_output, config=config)
+
+        try:
+            self.view.set_ui_locked(True)
+            self.view.set_progress(0, 1, "Running CV benchmark...")
+            self._set_main_window_status("Status: Benchmark Running...")
+            QApplication.processEvents()
+
+            result = runner.run({variant_name: dataset_dir})
+            records = result.get("records", []) or []
+            record = records[0] if records else {}
+            status = str(record.get("status", "unknown"))
+            metric_name = str(record.get("primary_metric_name", "box_map50"))
+            metric_value = float(record.get("primary_metric", 0.0))
+            vis_frames = int(record.get("visualized_frames", 0))
+            total_frames = int(record.get("dataset_total_frames", 0))
+            match_p = float(record.get("match_precision", 0.0))
+            match_r = float(record.get("match_recall", 0.0))
+            artifacts = result.get("artifacts", {}) or {}
+
+            self.view.set_progress(1, 1, "CV benchmark completed.")
+            self.view.set_status("CV benchmark completed.")
+            self._set_main_window_status("Status: Idle")
+
+            if status != "ok":
+                err = record.get("error", "Unknown error")
+                QMessageBox.warning(
+                    ctx.main_window,
+                    "CV Benchmark Failed",
+                    f"Benchmark failed for dataset:\n{dataset_dir}\n\nError:\n{err}",
+                )
+                return
+
+            QMessageBox.information(
+                ctx.main_window,
+                "CV Benchmark Completed",
+                (
+                    f"Dataset: {dataset_dir}\n"
+                    f"Task: {record.get('task', task)}\n"
+                    f"{metric_name}: {metric_value:.4f}\n\n"
+                    f"Frame comparison (GT vs Pred): {vis_frames}/{total_frames}\n"
+                    f"Match Precision: {match_p:.4f}\n"
+                    f"Match Recall: {match_r:.4f}\n\n"
+                    f"Summary: {artifacts.get('summary_md', '')}\n"
+                    f"CSV: {artifacts.get('csv', '')}\n"
+                    f"JSON: {artifacts.get('json', '')}\n"
+                    f"Comparisons: {record.get('comparison_dir', '')}\n"
+                    f"Frame Compare CSV: {record.get('comparison_csv', '')}"
+                ),
+            )
+        finally:
+            self.view.set_progress(0, 0, "")
+            self.view.set_ui_locked(False)
+            self._set_main_window_status("Status: Idle")
+
+    # Legacy method kept for compatibility with older UI wiring.
+    def handle_run_cv_proof(self) -> None:
+        self.handle_run_cv_benchmark()

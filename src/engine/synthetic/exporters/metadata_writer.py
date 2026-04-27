@@ -52,11 +52,16 @@ class MetadataWriter:
 
     def flush(self) -> None:
         json_path = self.output_dir / "frames.json"
+        ndjson_path = self.output_dir / "frames.ndjson"
         csv_path = self.output_dir / "objects.csv"
 
         payload = {"frames": self._frames}
         with open(json_path, "w", encoding="utf-8") as f:
             json.dump(payload, f, ensure_ascii=False, indent=2)
+
+        with open(ndjson_path, "w", encoding="utf-8") as f:
+            for frame in self._frames:
+                f.write(json.dumps(frame, ensure_ascii=False) + "\n")
 
         csv_columns = [
             "frame_index",

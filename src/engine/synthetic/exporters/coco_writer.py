@@ -72,8 +72,18 @@ class COCOWriter:
 
             visible_pixels = int(obj.get("visible_pixels", int(box_w * box_h)))
 
-            # Rectangular polygon fallback keeps COCO segmentation field valid.
-            segmentation = [[xmin, ymin, xmin, ymax, xmax, ymax, xmax, ymin]]
+            raw_segmentation = obj.get("segmentation", None)
+            if isinstance(raw_segmentation, list) and raw_segmentation:
+                segmentation = []
+                for polygon in raw_segmentation:
+                    if not isinstance(polygon, list) or len(polygon) < 6:
+                        continue
+                    segmentation.append([float(v) for v in polygon])
+                if not segmentation:
+                    segmentation = [[xmin, ymin, xmin, ymax, xmax, ymax, xmax, ymin]]
+            else:
+                # Rectangular polygon fallback keeps COCO segmentation field valid.
+                segmentation = [[xmin, ymin, xmin, ymax, xmax, ymax, xmax, ymin]]
 
             self.annotations.append(
                 {

@@ -10,6 +10,6 @@ numpy>=1.21.0
 Pillow>=9.0.0      # For Texture loading
 plyfile>=0.7.4     # For PLY model parsing
 
-# AI / CV Proof
+# AI / CV Benchmark
 ultralytics>=8.2.0
 torch>=2.0.0

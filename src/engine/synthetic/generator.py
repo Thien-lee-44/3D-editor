@@ -1,6 +1,7 @@
 import math
 import shutil
 import random
+import json
 from pathlib import Path
 from typing import Any, Callable, Optional, Dict, List, Tuple
 
@@ -13,6 +14,7 @@ from src.engine.synthetic.exporters.image_writer import ImageWriter
 from src.engine.synthetic.exporters.yolo_writer import YOLOWriter
 from src.engine.synthetic.exporters.coco_writer import COCOWriter
 from src.engine.synthetic.exporters.metadata_writer import MetadataWriter
+from src.engine.synthetic.exporters.voc_writer import VOCWriter
 
 class SyntheticDataGenerator:
     def __init__(self, engine: Any) -> None:
@@ -53,7 +55,9 @@ class SyntheticDataGenerator:
         return lookup
 
     def _write_dataset_yaml(self, class_lookup: Dict[int, str]) -> None:
-        yaml_path = self.output_dir / 'dataset.yaml'
+        self._write_single_dataset_yaml(self.output_dir / 'dataset.yaml', class_lookup)
+
+    def _write_single_dataset_yaml(self, yaml_path: Path, class_lookup: Dict[int, str]) -> None:
         lines = [
             f"path: {self.output_dir.as_posix()}",
             "train: images",
@@ -68,6 +72,30 @@ class SyntheticDataGenerator:
 
         with open(yaml_path, 'w', encoding='utf-8') as f:
             f.write("\n".join(lines) + "\n")
+
+    def _write_export_manifest(self) -> None:
+        manifest_path = self.output_dir / "annotations" / "export_manifest.json"
+        payload = {
+            "dataset_root": self.output_dir.as_posix(),
+            "formats": {
+                "yolo_detection": "labels/*.txt",
+                "yolo_segmentation": "labels_seg/*.txt",
+                "coco_detection_instance": "annotations/instances_coco.json",
+                "pascal_voc": "annotations/voc/*.xml",
+                "metadata_json": "metadata/frames.json",
+                "metadata_csv": "metadata/objects.csv",
+                "metadata_ndjson": "metadata/frames.ndjson",
+                "all_images_split": "splits/all_images.txt",
+                "all_labels_split": "splits/all_labels.txt",
+                "rgb": "images/*.jpg",
+                "depth_png": "depth/*.png",
+                "depth_npy": "depth/*.npy",
+                "instance_mask": "masks/instance/*.png",
+                "semantic_mask": "masks/semantic/*.png",
+            },
+        }
+        with open(manifest_path, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=2)
 
     def _camera_payload(self, cam: CameraComponent, tf: Optional[TransformComponent]) -> Dict[str, Any]:
         if tf:
@@ -191,8 +219,28 @@ class SyntheticDataGenerator:
         (self.output_dir / "masks" / "instance").mkdir(parents=True, exist_ok=True)
         (self.output_dir / "masks" / "semantic").mkdir(parents=True, exist_ok=True)
         (self.output_dir / "labels").mkdir(exist_ok=True)
+        (self.output_dir / "labels_seg").mkdir(exist_ok=True)
         (self.output_dir / "annotations").mkdir(exist_ok=True)
+        (self.output_dir / "annotations" / "voc").mkdir(parents=True, exist_ok=True)
         (self.output_dir / "metadata").mkdir(exist_ok=True)
+        (self.output_dir / "splits").mkdir(exist_ok=True)
+
+    def _write_split_indices(self) -> None:
+        images = sorted((self.output_dir / "images").glob("*.jpg"))
+        labels = sorted((self.output_dir / "labels").glob("*.txt"))
+
+        all_images_txt = self.output_dir / "splits" / "all_images.txt"
+        all_labels_txt = self.output_dir / "splits" / "all_labels.txt"
+
+        with open(all_images_txt, "w", encoding="utf-8") as f:
+            for image_path in images:
+                rel = image_path.relative_to(self.output_dir).as_posix()
+                f.write(rel + "\n")
+
+        with open(all_labels_txt, "w", encoding="utf-8") as f:
+            for label_path in labels:
+                rel = label_path.relative_to(self.output_dir).as_posix()
+                f.write(rel + "\n")
 
     def generate_batch(self, num_frames: int, dt: float, res_w: int, res_h: int, use_rand_light: bool, use_rand_cam: bool, progress_cb: Callable, preview_stride: int) -> None:
         self.is_running = True
@@ -328,6 +376,8 @@ class SyntheticDataGenerator:
                 rel_mask_instance = f"masks/instance/{frame_name}.png"
                 rel_mask_semantic = f"masks/semantic/{frame_name}.png"
                 rel_label = f"labels/{frame_name}.txt"
+                rel_label_seg = f"labels_seg/{frame_name}.txt"
+                rel_voc = f"annotations/voc/{frame_name}.xml"
 
                 ImageWriter.save_rgb(str(self.output_dir / rel_rgb), rgb_pixels, res_w, res_h)
                 ImageWriter.save_mask(str(self.output_dir / rel_mask_instance), inst_pixels, res_w, res_h)
@@ -338,7 +388,9 @@ class SyntheticDataGenerator:
                 np.save(str(self.output_dir / rel_depth_npy), depth_arr.reshape((res_h, res_w)))
 
                 YOLOWriter.export(str(self.output_dir / rel_label), objects_payload, res_w, res_h, is_segmentation=False)
+                YOLOWriter.export(str(self.output_dir / rel_label_seg), objects_payload, res_w, res_h, is_segmentation=True)
                 coco_writer.add_frame(frame_idx, rel_rgb, res_w, res_h, objects_payload)
+                VOCWriter.export(str(self.output_dir / rel_voc), rel_rgb, res_w, res_h, objects_payload)
 
                 frame_record = {
                     'frame_index': frame_idx,
@@ -350,6 +402,8 @@ class SyntheticDataGenerator:
                         'instance_mask': rel_mask_instance,
                         'semantic_mask': rel_mask_semantic,
                         'label': rel_label,
+                        'label_seg': rel_label_seg,
+                        'voc': rel_voc,
                     },
                     'camera': self._camera_payload(cam, cam_tf),
                     'objects': objects_payload,
@@ -385,4 +439,6 @@ class SyntheticDataGenerator:
             coco_writer.flush()
             metadata_writer.flush()
             self._write_dataset_yaml(class_lookup)
+            self._write_split_indices()
+            self._write_export_manifest()
             self.is_running = False
