@@ -35,6 +35,11 @@ class InspectorController:
                 info = ctx.engine.get_animation_info()
                 data["active_keyframe_index"] = info.get("active_idx", -1)
                 data["active_keyframe_time"] = info.get("target_time", 0.0)
+                
+                if data.get("semantic") and ctx.engine.scene and 0 <= entity_id < len(ctx.engine.scene.entities):
+                    ent = ctx.engine.scene.entities[entity_id]
+                    data["semantic"]["resolved_track_id"] = ctx.engine.get_resolved_track_id(ent)
+                
                 self.view.update_inspector_data(data)
             else:
                 self.view.hide_all_components()
@@ -168,6 +173,14 @@ class InspectorController:
         self.request_undo_snapshot()
         ctx.engine.update_semantic_class_color(class_id, color)
         ctx.events.emit(AppEvent.SCENE_CHANGED)
+
+    @safe_execute(context="Remove Semantic Class")
+    def remove_semantic_class(self, class_id: int) -> None:
+        if self._is_updating_ui: return
+        self.request_undo_snapshot()
+        ctx.engine.remove_semantic_class(class_id)
+        ctx.events.emit(AppEvent.SCENE_CHANGED)
+        self.refresh_inspector()
 
     @safe_execute(context="Reset Transform")
     def reset_transform(self) -> None:

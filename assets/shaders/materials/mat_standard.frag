@@ -80,22 +80,26 @@ uniform sampler2D shadowMap;
 float ShadowCalculation(vec4 fragPosLightSpace, vec3 normal, vec3 lightDir) {
     vec3 projCoords = fragPosLightSpace.xyz / fragPosLightSpace.w;
     projCoords = projCoords * 0.5 + 0.5;
-    if(projCoords.z > 1.0) return 0.0;
+    if (projCoords.z > 1.0 || projCoords.z < 0.0 || projCoords.x < 0.0 || projCoords.x > 1.0 || projCoords.y < 0.0 || projCoords.y > 1.0) return 0.0;
     
     float currentDepth = projCoords.z;
     vec3 n = normalize(normal);
     vec3 l = normalize(-lightDir);
-    float bias = max(0.005 * (1.0 - dot(n, l)), 0.0005);
-    
+    vec2 texelSize = 1.0 / vec2(textureSize(shadowMap, 0));
+    float ndotl = max(dot(n, l), 0.0);
+    //float slopeBias = 0.00035 * (1.0 - ndotl);
+    //float texelBias = 0.75 * max(texelSize.x, texelSize.y);
+    //float bias = clamp(max(0.00008 + slopeBias, texelBias), 0.00008, 0.00075);
+    float slope = sqrt(max(1.0 - ndotl * ndotl, 0.0)) / max(ndotl, 0.001);
+    float bias = clamp(0.00005 + 0.0001 * slope, 0.0003, 0.001);
     float shadow = 0.0;
-    vec2 texelSize = 1.0 / textureSize(shadowMap, 0);
-    for(int x = -2; x <= 2; ++x) {
-        for(int y = -2; y <= 2; ++y) {
+    for(int x = -1; x <= 1; ++x) {
+        for(int y = -1; y <= 1; ++y) {
             float pcfDepth = texture(shadowMap, projCoords.xy + vec2(x, y) * texelSize).r; 
             shadow += currentDepth - bias > pcfDepth ? 1.0 : 0.0;        
         }    
     }
-    shadow /= 25.0;
+    shadow /= 9.0;
     return shadow;
 }
 

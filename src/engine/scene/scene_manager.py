@@ -219,59 +219,6 @@ class SceneManager:
             if mesh and getattr(mesh, 'is_proxy', False): mesh.visible = is_visible
 
     # =========================================================================
-    # COMPUTER VISION DELEGATES (SYNTHETIC DATA)
-    # =========================================================================
-    
-    def get_debug_bboxes(self, width: int, height: int) -> List[Tuple[float, float, float, float]]:
-        """Returns a list of actively computed bounding boxes to be visualized in the viewport overlay."""
-        bboxes = []
-        active_camera = None
-        
-        for tf, cam, ent in self.scene.cached_cameras:
-            if getattr(cam, 'is_active', False):
-                active_camera = cam
-                break
-                
-        if not active_camera:
-            return bboxes
-
-        view_mat = active_camera.get_view_matrix()
-        proj_mat = active_camera.get_projection_matrix()
-
-        from src.engine.synthetic.label_utils import LabelUtils
-        
-        merged_bboxes = {}
-        
-        for ent in self.scene.entities:
-            semantic = ent.get_component(SemanticComponent)
-            tf = ent.get_component(TransformComponent)
-            mesh = ent.get_component(MeshRenderer)
-
-            if semantic and tf and mesh and mesh.visible and not getattr(mesh, 'is_proxy', False):
-                bbox = LabelUtils.get_2d_bounding_box(tf, mesh.geometry, view_mat, proj_mat, width, height)
-                if bbox:
-                    xmin, ymin, xmax, ymax = bbox
-                    t_id = semantic.track_id
-                    c_id = semantic.class_id
-                    
-                    # Strictly segregate bounding boxes using both Track ID AND Class ID.
-                    # This isolates objects if they are grouped but have different semantic labels.
-                    merge_key = f"{t_id}_{c_id}"
-                    
-                    if merge_key in merged_bboxes:
-                        curr = merged_bboxes[merge_key]
-                        merged_bboxes[merge_key] = [
-                            min(curr[0], xmin),
-                            min(curr[1], ymin),
-                            max(curr[2], xmax),
-                            max(curr[3], ymax)
-                        ]
-                    else:
-                        merged_bboxes[merge_key] = [xmin, ymin, xmax, ymax]
-                        
-        return list(merged_bboxes.values())
-
-    # =========================================================================
     # RESOURCE & FACADE ROUTING
     # =========================================================================
 
@@ -352,6 +299,7 @@ class SceneManager:
     def get_semantic_classes(self) -> dict: return self.semantic.get_semantic_classes()
     def add_semantic_class(self, name: str) -> int: return self.semantic.add_semantic_class(name)
     def update_semantic_class_color(self, class_id: int, color: list) -> None: self.semantic.update_semantic_class_color(class_id, color)
+    def remove_semantic_class(self, class_id: int) -> None: self.semantic.remove_semantic_class(class_id)
     
     def get_animation_info(self) -> dict: return self.animation.get_animation_info()
     def set_active_keyframe(self, index: int) -> float: return self.animation.set_active_keyframe(index)
@@ -364,3 +312,6 @@ class SceneManager:
         return self.animation.update_keyframe_properties(current_time, comp_name, payload)
         
     def add_and_focus_keyframe(self, time: float) -> int: return self.animation.add_and_focus_keyframe(time)
+    
+    def handle_animation_property(self, ent: Entity, comp: AnimationComponent, prop: str, value: Any) -> None:
+        self.animation.handle_animation_property(ent, comp, prop, value)

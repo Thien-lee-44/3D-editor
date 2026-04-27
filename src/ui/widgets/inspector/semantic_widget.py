@@ -5,20 +5,15 @@ from PySide6.QtGui import QColor
 from src.ui.widgets.inspector.base_widget import BaseComponentWidget
 
 class SemanticWidget(BaseComponentWidget):
-    """
-    Refined Inspector UI for Semantic Labeling.
-    Dynamically adapts controls based on whether the entity acts as a Unified Object 
-    or purely as an Organizational Folder capable of bulk-assigning Class IDs.
-    """
     def __init__(self, controller: Any) -> None:
         super().__init__("Semantic Labeling", controller)
         
-        self.chk_is_object = QCheckBox("Treat as Unified 3D Object")
+        self.chk_is_object = QCheckBox("Unified Object")
         self.chk_is_object.setToolTip("Uncheck to use this entity as a folder. Unified Objects forcefully sync semantics to children.")
         self.chk_is_object.toggled.connect(self.toggle_is_object)
         self.layout.addWidget(self.chk_is_object)
 
-        self.chk_propagate = QCheckBox("Apply Class ID to Children")
+        self.chk_propagate = QCheckBox("Apply to Children")
         self.chk_propagate.setToolTip("Bulk-assign this Class ID to all nested entities.")
         self.chk_propagate.toggled.connect(self.toggle_propagation)
         self.layout.addWidget(self.chk_propagate)
@@ -28,7 +23,7 @@ class SemanticWidget(BaseComponentWidget):
         form.setContentsMargins(0, 5, 0, 5)
 
         self.lbl_track_title = QLabel("Track ID:")
-        self.lbl_track_id = QLabel("Auto (Dynamic)")
+        self.lbl_track_id = QLabel("Auto")
         self.lbl_track_id.setStyleSheet("color: #00BFFF; font-style: italic; font-weight: bold;")
         form.addRow(self.lbl_track_title, self.lbl_track_id)
 
@@ -43,13 +38,18 @@ class SemanticWidget(BaseComponentWidget):
         self.btn_add.setFixedWidth(28)
         self.btn_add.clicked.connect(self.add_new_class)
         
+        self.btn_remove = QPushButton("-")
+        self.btn_remove.setFixedWidth(28)
+        self.btn_remove.clicked.connect(self.remove_current_class)
+        
         class_layout = QHBoxLayout()
         class_layout.setContentsMargins(0, 0, 0, 0)
         class_layout.addWidget(self.cmb_class)
         class_layout.addWidget(self.btn_color)
         class_layout.addWidget(self.btn_add)
+        class_layout.addWidget(self.btn_remove)
 
-        form.addRow("Class ID:", class_layout)
+        form.addRow("Class:", class_layout)
         self.layout.addWidget(self.data_container)
 
     def update_data(self, data: Dict[str, Any]) -> None:
@@ -63,6 +63,14 @@ class SemanticWidget(BaseComponentWidget):
         show_track = is_obj if is_group else True
         self.lbl_track_title.setVisible(show_track)
         self.lbl_track_id.setVisible(show_track)
+
+        resolved_id = data.get("resolved_track_id", -1)
+        if resolved_id > 0:
+            self.lbl_track_id.setText(str(resolved_id))
+            self.lbl_track_id.setStyleSheet("color: #00FF00; font-weight: bold;")
+        else:
+            self.lbl_track_id.setText("Auto")
+            self.lbl_track_id.setStyleSheet("color: #00BFFF; font-style: italic; font-weight: bold;")
 
         self.chk_is_object.blockSignals(True)
         self.chk_is_object.setChecked(is_obj)
@@ -132,3 +140,9 @@ class SemanticWidget(BaseComponentWidget):
         if color.isValid():
             rgb = [color.red() / 255.0, color.green() / 255.0, color.blue() / 255.0]
             self._controller.update_semantic_class_color(class_id, rgb)
+
+    def remove_current_class(self) -> None:
+        if not self._controller: return
+        class_id = self.cmb_class.currentData()
+        if class_id == 0: return 
+        self._controller.remove_semantic_class(class_id)

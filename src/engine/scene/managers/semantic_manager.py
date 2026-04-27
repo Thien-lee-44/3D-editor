@@ -76,3 +76,12 @@ class SemanticManager:
     def update_semantic_class_color(self, class_id: int, color: List[float]) -> None:
         if class_id in self.semantic_classes:
             self.semantic_classes[class_id]["color"] = color
+            
+    def remove_semantic_class(self, class_id: int) -> None:
+        if class_id == 0: return 
+        if class_id in self.semantic_classes:
+            del self.semantic_classes[class_id]
+            for ent in self.scene.entities:
+                comp = ent.get_component(SemanticComponent)
+                if comp and comp.class_id == class_id:
+                    comp.class_id = 0

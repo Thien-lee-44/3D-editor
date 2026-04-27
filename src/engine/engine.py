@@ -4,23 +4,20 @@ from OpenGL.GL import *
 from typing import Any, Dict, Optional, List, Tuple, Union
 
 from src.engine.scene.scene import Scene
-from src.engine.graphics.renderer import Renderer
+from src.engine.graphics.editor_renderer import Renderer, GizmoRenderer, HUDRenderer
+from src.engine.graphics.synthetic_renderer import SyntheticRenderer
 from src.engine.resources.resource_manager import ResourceManager
 from src.engine.geometry.primitives import PrimitivesManager
 from src.engine.scene.entity_factory import EntityFactory
 from src.engine.scene.scene_manager import SceneManager
 from src.engine.core.interaction_manager import InteractionManager
 from src.engine.scene.animator import AnimatorSystem
- 
+
 class Engine:
-    """
-    The Ultimate Dynamic Facade.
-    Serves as the singular communication boundary between the Qt-based Editor UI 
-    and the underlying Engine ECS/Renderer backend.
-    """
     def __init__(self) -> None:
         self.scene = None
         self.renderer = None
+        self.synthetic_renderer = None
         self.gizmo_renderer = None
         self.hud_renderer = None
         self.entity_fac = None
@@ -30,15 +27,14 @@ class Engine:
 
     def init_viewport_gl(self) -> None:
         self.scene = Scene()
+        
         self.renderer = Renderer()
+        self.synthetic_renderer = SyntheticRenderer()
+        self.gizmo_renderer = GizmoRenderer()
         
         self.entity_fac = EntityFactory(self.scene)
         self.scene_mgr = SceneManager(self.scene)
         self.interaction_mgr = InteractionManager(self.scene)
-        
-        from src.engine.graphics.editor_renderer import GizmoRenderer
-        self.gizmo_renderer = GizmoRenderer()
-        
         self.animator = AnimatorSystem(self.scene)
         
         self.entity_fac.setup_default_scene()
@@ -49,7 +45,6 @@ class Engine:
         glClearColor(0.0, 0.0, 0.0, 1.0)
 
     def init_hud_gl(self) -> None:
-        from src.engine.graphics.editor_renderer import HUDRenderer
         glEnable(GL_DEPTH_TEST)
         glClearColor(0.15, 0.15, 0.15, 1.0)
         self.hud_renderer = HUDRenderer()
@@ -66,10 +61,6 @@ class Engine:
             
         glViewport(0, 0, w, h)
         self._sync_active_camera_aspect(w, h)
-
-    # =========================================================================
-    # CORE RENDER AND PICKING DELEGATES
-    # =========================================================================
 
     def render_viewport(self, w: int, h: int, bg_color: tuple, active_axis: str, hovered_axis: str, hovered_screen_axis: str) -> None:
         if not self.scene or not self.renderer or not self.interaction_mgr: 
@@ -94,42 +85,11 @@ class Engine:
                 active_axis or hovered_axis
             )
 
-    def blit_preview_to_screen(self, target_w: int, target_h: int, target_fbo: int) -> None:
-        """
-        Transfers the rendered output directly from the engine's off-screen FBO 
-        to the Preview Window's on-screen FBO using hardware blitting.
-        """
-        if not self.renderer or not getattr(self.renderer, 'picking_texture', None):
-            return
-
-        temp_fbo = glGenFramebuffers(1)
-        glBindFramebuffer(GL_READ_FRAMEBUFFER, temp_fbo)
-        glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, self.renderer.picking_texture, 0)
-        
-        if glCheckFramebufferStatus(GL_READ_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE:
-            glBindFramebuffer(GL_READ_FRAMEBUFFER, 0)
-            glDeleteFramebuffers(1, [temp_fbo])
-            return
-
-        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, target_fbo)
-        
-        try:
-            glBlitFramebuffer(
-                0, 0, self.renderer.picking_width, self.renderer.picking_height,
-                0, 0, target_w, target_h,
-                GL_COLOR_BUFFER_BIT, GL_NEAREST
-            )
-        except Exception as e:
-            print(f"Hardware Blit failed: {e}")
-            
-        glBindFramebuffer(GL_FRAMEBUFFER, target_fbo)
-        glDeleteFramebuffers(1, [temp_fbo])
-
     def capture_fbo_frame(self, width: int, height: int, mode: str = "RGB", return_texture_id: bool = False) -> Union[bytes, int]:
-        if not self.renderer or not self.scene:
+        if not self.synthetic_renderer or not self.scene:
             return 0 if return_texture_id else b""
         self._sync_active_camera_aspect(width, height)
-        return self.renderer.capture_fbo_frame(self.scene, width, height, mode, return_texture_id)
+        return self.synthetic_renderer.capture_fbo_frame(self.scene, width, height, mode, return_texture_id)
 
     def raycast_select(self, mx: float, my: float, width: int, height: int) -> int:
         if not self.renderer or not self.scene:
@@ -152,13 +112,6 @@ class Engine:
         if target_tf: 
             self.hud_renderer.render(w, h, active_axis, is_hover, target_tf, view)
 
-    def get_debug_bboxes(self, width: int, height: int) -> list:
-        return self.scene_mgr.get_debug_bboxes(width, height) if self.scene_mgr else []
-
-    # =========================================================================
-    # RESOURCE MANAGEMENT DELEGATES
-    # =========================================================================
-    
     def preload_model_to_cache(self, path: str) -> None:
         ResourceManager.get_model(path)
     
@@ -192,10 +145,6 @@ class Engine:
         elif asset_type == 'MODEL' and path in ResourceManager.project_models: 
             ResourceManager.project_models.remove(path)
 
-    # =========================================================================
-    # EXPLICIT MANAGER DELEGATIONS
-    # =========================================================================
-    
     def has_clipboard(self) -> bool:
         return self.scene_mgr.has_clipboard() if self.scene_mgr else False
 
@@ -356,7 +305,9 @@ class Engine:
     def update_semantic_class_color(self, class_id: int, color: list) -> None:
         if self.scene_mgr: self.scene_mgr.update_semantic_class_color(class_id, color)
 
-    # ------------------ ANIMATION FACADE DELEGATES ------------------
+    def remove_semantic_class(self, class_id: int) -> None:
+        if self.scene_mgr: self.scene_mgr.remove_semantic_class(class_id)
+
     def get_animation_info(self) -> dict:
         return self.scene_mgr.get_animation_info() if self.scene_mgr else {}
 
@@ -376,3 +327,51 @@ class Engine:
 
     def add_and_focus_keyframe(self, time: float) -> int:
         return self.scene_mgr.add_and_focus_keyframe(time) if self.scene_mgr else -1
+
+    def mutate_keyframes(self, payload: dict) -> None:
+        if self.scene_mgr and self.scene.selected_index >= 0:
+            ent = self.scene.entities[self.scene.selected_index]
+            from src.engine.scene.components.animation_cmp import AnimationComponent
+            anim = ent.get_component(AnimationComponent)
+            if anim:
+                self.scene_mgr.animation.handle_animation_property(ent, anim, "MUTATE_KEYFRAMES", payload)
+
+    def get_resolved_track_id(self, ent: Any) -> int:
+        if not self.scene or ent not in self.scene.entities:
+            return -1
+            
+        from src.engine.scene.components.semantic_cmp import SemanticComponent
+        from src.engine.scene.components import MeshRenderer
+        
+        sem = ent.get_component(SemanticComponent)
+        if sem and getattr(sem, 'track_id', -1) > 0: 
+            return sem.track_id
+            
+        target_map = {}
+        dense_id = 1
+        
+        for e in self.scene.entities:
+            e_sem = e.get_component(SemanticComponent)
+            e_mesh = e.get_component(MeshRenderer)
+            if e_sem and e_mesh and getattr(e_mesh, 'visible', True) and not getattr(e_mesh, 'is_proxy', False):
+                t = e
+                p = e.parent
+                while p:
+                    p_sem = p.get_component(SemanticComponent)
+                    if p_sem and getattr(p_sem, 'is_merged_instance', False):
+                        t = p
+                    p = p.parent
+                
+                if t not in target_map:
+                    target_map[t] = dense_id
+                    dense_id += 1
+                    
+        target = ent
+        p = ent.parent
+        while p:
+            p_sem = p.get_component(SemanticComponent)
+            if p_sem and getattr(p_sem, 'is_merged_instance', False):
+                target = p
+            p = p.parent
+            
+        return target_map.get(target, -1)

@@ -5,6 +5,7 @@ from typing import Any, Dict, Optional
 
 from PySide6.QtWidgets import QMessageBox, QFileDialog, QApplication
 from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QOpenGLContext
 import numpy as np  
 
 from src.app import ctx
@@ -19,6 +20,7 @@ class GeneratorController:
         self._last_payload: Optional[Dict[str, Any]] = None
         
         self.preview_timer = QTimer()
+        self.preview_timer.setTimerType(Qt.PreciseTimer)
         self.preview_timer.timeout.connect(self._on_playback_tick)
         
         self.is_playing: bool = False
@@ -35,37 +37,74 @@ class GeneratorController:
 
     def _ensure_preview_mode(self) -> None:
         if hasattr(ctx, "main_window"):
-            ctx.main_window.stacked_view.setCurrentIndex(1)
-            ctx.main_window.mode_selector.setCurrentIndex(1)
+            if hasattr(ctx.main_window, "stacked_view") and ctx.main_window.stacked_view.currentIndex() != 1:
+                ctx.main_window.stacked_view.setCurrentIndex(1)
+            if hasattr(ctx.main_window, "mode_selector") and ctx.main_window.mode_selector.currentIndex() != 1:
+                ctx.main_window.mode_selector.setCurrentIndex(1)
+
+    def _set_main_window_status(self, text: str) -> None:
+        if hasattr(ctx, 'main_window') and hasattr(ctx.main_window, 'lbl_preview_status'):
+            ctx.main_window.lbl_preview_status.setText(text)
+
+    def _set_main_window_time(self, current_time: float) -> None:
+        if hasattr(ctx, 'main_window') and hasattr(ctx.main_window, 'lbl_preview_time'):
+            ctx.main_window.lbl_preview_time.setText(f"Time: {current_time:.2f}s")
+
+    def _update_main_window_stats(self, payload: Dict[str, Any]) -> None:
+        if not payload: return
+        stats = payload.get("stats", {})
+        num_obj = stats.get('num_objects', len(payload.get("objects", [])))
+        if hasattr(ctx, 'main_window') and hasattr(ctx.main_window, 'lbl_preview_stats'):
+            ctx.main_window.lbl_preview_stats.setText(f"Obj: {num_obj}")
 
     def _push_to_viewport(self, payload: Dict[str, Any]) -> None:
         if not payload: 
             return
         self._last_payload = payload
         if hasattr(ctx, "main_window") and hasattr(ctx.main_window, "preview_viewport"):
-            ctx.main_window.preview_viewport.update_frame(payload)
+            vp = ctx.main_window.preview_viewport
+            if hasattr(vp, "update_frame"):
+                vp.update_frame(payload)
+        self._update_main_window_stats(payload)
 
     def refresh_preview_display(self) -> None:
         self.handle_preview_once()
 
-    def _run_preview_render(self, w: int, h: int, use_rand: bool, seed: int, use_occ: bool, active_mode: str = "ALL", is_preview: bool = False) -> Optional[Dict[str, Any]]:
+    def _run_preview_render(self, w: int, h: int, active_mode: str = "RGB", is_playing: bool = False) -> Optional[Dict[str, Any]]:
         payload = None
         has_gl = hasattr(ctx, "main_window") and hasattr(ctx.main_window, "gl_widget")
-        
-        if has_gl: 
-            ctx.main_window.gl_widget.makeCurrent()
+        viewport = getattr(ctx.main_window, "preview_viewport", None) if hasattr(ctx, "main_window") else None
+        show_bbox = viewport.is_bbox_enabled() if hasattr(viewport, 'is_bbox_enabled') else True
+
+        context_widget = None
+        if has_gl and hasattr(ctx.main_window.gl_widget, "makeCurrent"):
+            context_widget = ctx.main_window.gl_widget
+
+        context_acquired = False
+        if context_widget is not None:
+            try:
+                context_widget.makeCurrent()
+                context_acquired = QOpenGLContext.currentContext() is not None
+            except Exception:
+                context_acquired = False
+
+        if not context_acquired:
+            return {}
             
         try:
-            payload = self.generator_backend.preview_frame(
-                res_w=w, res_h=h, 
-                use_randomization=use_rand, 
-                seed=seed if seed >= 0 else None, 
-                use_occlusion_bbox=use_occ,
-                active_mode=active_mode,
-                is_preview=is_preview
+            payload = self.generator_backend.extract_preview_frame(
+                w,
+                h,
+                active_mode,
+                is_playing,
+                show_bbox=show_bbox,
             )
         finally:
-            pass 
+            if context_acquired and context_widget is not None and hasattr(context_widget, "doneCurrent"):
+                try:
+                    context_widget.doneCurrent()
+                except Exception:
+                    pass
                         
         return payload
 
@@ -76,16 +115,14 @@ class GeneratorController:
         
         settings = self.view.get_settings()
         viewport = getattr(ctx.main_window, "preview_viewport", None)
-        res_w, res_h = viewport.get_resolution() if viewport else (settings["res_w"], settings["res_h"])
-        active_mode = viewport.get_preview_mode() if viewport else "RGB"
+        
+        res_w, res_h = viewport.get_resolution() if hasattr(viewport, 'get_resolution') else (settings["res_w"], settings["res_h"])
+        active_mode = viewport.get_preview_mode() if hasattr(viewport, 'get_preview_mode') else "RGB"
         
         payload = self._run_preview_render(
             res_w, res_h, 
-            settings["use_randomization"], 
-            -1,  
-            settings["use_occlusion_bbox"],
             active_mode=active_mode,
-            is_preview=False 
+            is_playing=False 
         )
         self._push_to_viewport(payload)
 
@@ -93,13 +130,11 @@ class GeneratorController:
         self._ensure_backend()
         self._ensure_preview_mode()
         
-        viewport = getattr(ctx.main_window, "preview_viewport", None)
-        
         if self.is_playing:
             self.preview_timer.stop()
             self.is_playing = False
             self.view.set_preview_state(False)
-            if viewport: viewport.set_status("Status: Idle")
+            self._set_main_window_status("Status: Idle")
         else:
             settings = self.view.get_settings()
             self.sim_dt = settings.get("dt", 0.033)
@@ -113,7 +148,7 @@ class GeneratorController:
             self.preview_timer.start(int(self.sim_dt * 1000)) 
             self.is_playing = True
             self.view.set_preview_state(True)
-            if viewport: viewport.set_status("Status: Live Preview")
+            self._set_main_window_status("Status: Live Preview")
             
         return self.is_playing
 
@@ -124,8 +159,7 @@ class GeneratorController:
         self.sim_frame = 0
         self.view.set_preview_state(False)
         
-        viewport = getattr(ctx.main_window, "preview_viewport", None)
-        if viewport: viewport.set_status("Status: Idle")
+        self._set_main_window_status("Status: Idle")
         
         animator = getattr(ctx.engine, "animator", None)
         if animator:
@@ -135,7 +169,7 @@ class GeneratorController:
 
     def _on_playback_tick(self) -> None:
         viewport = getattr(ctx.main_window, "preview_viewport", None)
-        if viewport and not viewport.isVisible():
+        if viewport and hasattr(viewport, "isVisible") and not viewport.isVisible():
             self.stop_preview_playback()
             return
 
@@ -144,36 +178,45 @@ class GeneratorController:
         
         if elapsed < self.sim_dt * 0.9:
             return
-            
+
+        steps_due = max(1, int(elapsed / max(self.sim_dt, 1e-6)))
+        steps_due = min(steps_due, 5)
+        remaining_steps = self.sim_total_frames - self.sim_frame
+        if remaining_steps <= 0:
+            self.stop_preview_playback()
+            return
+        steps_due = min(steps_due, remaining_steps)
+
         self._last_real_time = current_real_time
 
         if self.sim_frame >= self.sim_total_frames:
             self.stop_preview_playback()
             return
 
+        render_time = self.sim_time + self.sim_dt * (steps_due - 1)
         animator = getattr(ctx.engine, "animator", None)
         if animator:
-            animator.evaluate(self.sim_time, self.sim_dt, target_entity_id=-1)
+            animator.evaluate(render_time, self.sim_dt * steps_due, target_entity_id=-1)
 
         settings = self.view.get_settings()
-        res_w, res_h = viewport.get_resolution() if viewport else (settings["res_w"], settings["res_h"])
-        active_mode = viewport.get_preview_mode() if viewport else "RGB"
+        res_w, res_h = viewport.get_resolution() if hasattr(viewport, 'get_resolution') else (settings["res_w"], settings["res_h"])
+        active_mode = viewport.get_preview_mode() if hasattr(viewport, 'get_preview_mode') else "RGB"
        
-        payload = self._run_preview_render(
-            res_w, res_h, 
-            False, 
-            -1, 
-            settings["use_occlusion_bbox"],
-            active_mode=active_mode,
-            is_preview=True 
-        )
+        try:
+            payload = self._run_preview_render(
+                res_w, res_h, 
+                active_mode=active_mode,
+                is_playing=True 
+            )
+        except Exception:
+            self.stop_preview_playback()
+            return
         self._push_to_viewport(payload)
 
-        if viewport and hasattr(viewport, "update_playback_time"):
-            viewport.update_playback_time(self.sim_time)
+        self._set_main_window_time(render_time)
 
-        self.sim_time += self.sim_dt
-        self.sim_frame += 1
+        self.sim_time = render_time + self.sim_dt
+        self.sim_frame += steps_due
 
     @safe_execute(context="Browse Directory")
     def handle_browse_directory(self) -> None:
@@ -199,7 +242,6 @@ class GeneratorController:
     def handle_start_generation(self) -> None:
         settings = self.view.get_settings()
         self._ensure_backend()
-        viewport = getattr(ctx.main_window, "preview_viewport", None)
 
         try:
             target_dir = settings["output_dir"] if settings["output_dir"] else None
@@ -208,7 +250,8 @@ class GeneratorController:
             total_frames = settings["num_frames"]
             
             self.view.set_progress(0, total_frames, "Initializing...")
-            if viewport: viewport.set_status("Status: Rendering Data...")
+            self._set_main_window_status("Status: Rendering Data...")
+            preview_stride = max(1, total_frames // 120)
             
             def progress_callback(frame_idx: int, preview_payload: Optional[Dict[str, Any]] = None, stats: Optional[Dict[str, Any]] = None) -> None:
                 self.view.set_progress(frame_idx, total_frames, f"Rendering {frame_idx}/{total_frames} frames")
@@ -229,10 +272,10 @@ class GeneratorController:
                     dt=settings["dt"],
                     res_w=settings["res_w"],
                     res_h=settings["res_h"],
-                    use_randomization=settings["use_randomization"],
+                    use_rand_light=settings["use_rand_light"],
+                    use_rand_cam=settings["use_rand_cam"],
                     progress_cb=progress_callback,
-                    preview_stride=1, 
-                    use_occlusion_bbox=settings["use_occlusion_bbox"],
+                    preview_stride=preview_stride, 
                 )
             else:
                 self.generator_backend.generate_batch(
@@ -240,15 +283,15 @@ class GeneratorController:
                     dt=settings["dt"],
                     res_w=settings["res_w"],
                     res_h=settings["res_h"],
-                    use_randomization=settings["use_randomization"],
+                    use_rand_light=settings["use_rand_light"],
+                    use_rand_cam=settings["use_rand_cam"],
                     progress_cb=progress_callback,
-                    preview_stride=1, 
-                    use_occlusion_bbox=settings["use_occlusion_bbox"],
+                    preview_stride=preview_stride, 
                 )
             
             final_path = self.generator_backend.output_dir
             self.view.set_progress(total_frames, total_frames, "Completed!")
-            if viewport: viewport.set_status("Status: Idle")
+            self._set_main_window_status("Status: Idle")
             
             QMessageBox.information(ctx.main_window, "Success", f"Dataset synthesized successfully.\nSaved to:\n{final_path}")
             self.view.set_status("Generation Complete.")

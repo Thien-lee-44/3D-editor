@@ -40,10 +40,12 @@ class HierarchyController:
 
     @safe_execute(context="Rename Entity")
     def handle_rename(self, entity_id: int, new_name: str) -> None:
+        new_name = new_name.strip()
         if not new_name:
             ctx.events.emit(AppEvent.HIERARCHY_NEEDS_REFRESH)
             return
 
+        # 1. Unique name validation (logic from HeaderWidget)
         entities = ctx.engine.get_scene_entities_list()
         for ent in entities:
             if ent["id"] != entity_id and ent["name"] == new_name:
@@ -57,18 +59,18 @@ class HierarchyController:
 
         ctx.events.emit(AppEvent.ACTION_BEFORE_MUTATION)
         
-        if hasattr(ctx.engine, 'rename_entity'):
-            ctx.engine.rename_entity(entity_id, new_name)
-        else:
-            prev_id = ctx.engine.get_selected_entity_id()
-            ctx.engine.select_entity(entity_id)
-            ctx.engine.set_component_property("Entity", "name", new_name)
-            ctx.engine.select_entity(prev_id)
+        # 2. Synchronized property update logic
+        # Temporarily select to use the selection-based set_component_properties
+        prev_selected_id = ctx.engine.get_selected_entity_id()
+        ctx.engine.select_entity(entity_id)
+        ctx.engine.set_component_properties("Entity", {"name": new_name})
+        ctx.engine.select_entity(prev_selected_id)
             
-        if ctx.engine.get_selected_entity_id() == entity_id:
+        if prev_selected_id == entity_id:
             ctx.events.emit(AppEvent.COMPONENT_PROPERTY_CHANGED)
             
         ctx.events.emit(AppEvent.SCENE_CHANGED)
+        ctx.events.emit(AppEvent.HIERARCHY_NEEDS_REFRESH)
 
     def show_context_menu(self, global_pos: QPoint) -> None:
         if hasattr(ctx, 'main_window') and hasattr(ctx.main_window, 'show_context_menu'):

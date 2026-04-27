@@ -2,7 +2,7 @@ from PySide6.QtWidgets import (QMainWindow, QDockWidget, QWidget, QHBoxLayout, Q
                                QRadioButton, QToolBar, QComboBox, QCheckBox, 
                                QLabel, QFrame, QSpacerItem, QSizePolicy, 
                                QColorDialog, QMessageBox, QMenu, QStackedWidget)
-from PySide6.QtCore import Qt, QPoint
+from PySide6.QtCore import Qt, QPoint, QTimer
 from PySide6.QtGui import QKeySequence, QShortcut, QColor, QAction
 from typing import Any, Optional, List, Dict
 
@@ -119,7 +119,7 @@ class EditorMainWindow(QMainWindow):
 
             gen_ctrl = getattr(self._controller, 'generator_ctrl', None)
             if gen_ctrl and hasattr(gen_ctrl, 'refresh_preview_display'):
-                gen_ctrl.refresh_preview_display()
+                QTimer.singleShot(0, gen_ctrl.refresh_preview_display)
         else:
             for dock in self._all_docks:
                 if self._dock_states.get(dock, True):
@@ -351,7 +351,7 @@ class EditorMainWindow(QMainWindow):
         self.chk_preview_bbox.stateChanged.connect(self._on_preview_overlay_toggled)
         self.toolbar_preview.addWidget(self.chk_preview_bbox)
         
-        self.lbl_preview_stats = QLabel("Obj: 0 | Occ: 0.0")
+        self.lbl_preview_stats = QLabel("Obj: 0")
         self.lbl_preview_stats.setStyleSheet("color: #aaa; font-family: Consolas; margin-left: 15px; margin-right: 10px;")
         self.toolbar_preview.addWidget(self.lbl_preview_stats)
         

@@ -93,13 +93,13 @@ class GeneratorPanelView(QWidget):
         dur_layout.addWidget(self.btn_auto_dur)
         form.addRow("Duration (s):", dur_layout)
 
-        self.chk_randomize = QCheckBox("Domain Randomization (Light/Camera Jitter)")
-        self.chk_randomize.setChecked(True)
-        form.addRow("", self.chk_randomize)
+        self.chk_rand_light = QCheckBox("Randomize Light (Time of Day)")
+        self.chk_rand_light.setChecked(True)
+        form.addRow("", self.chk_rand_light)
 
-        self.chk_occlusion_bbox = QCheckBox("Pixel-Perfect Occlusion BBoxes")
-        self.chk_occlusion_bbox.setChecked(True)
-        form.addRow("", self.chk_occlusion_bbox)
+        self.chk_rand_cam = QCheckBox("Randomize Camera (Rotation Jitter)")
+        self.chk_rand_cam.setChecked(True)
+        form.addRow("", self.chk_rand_cam)
 
         self.main_layout.addWidget(group)
 
@@ -183,8 +183,8 @@ class GeneratorPanelView(QWidget):
             "res_h": self.spn_h.value(),
             "num_frames": int(duration * fps),
             "dt": 1.0 / fps,
-            "use_randomization": self.chk_randomize.isChecked(),
-            "use_occlusion_bbox": self.chk_occlusion_bbox.isChecked()
+            "use_rand_light": self.chk_rand_light.isChecked(),
+            "use_rand_cam": self.chk_rand_cam.isChecked()
         }
 
     def set_directory(self, path: str) -> None: 
@@ -224,3 +224,5 @@ class GeneratorPanelView(QWidget):
         self.cmb_res_presets.setEnabled(not locked)
         self.spn_w.setEnabled(not locked)
         self.spn_h.setEnabled(not locked)
+        self.chk_rand_light.setEnabled(not locked)
+        self.chk_rand_cam.setEnabled(not locked)
