@@ -1,3 +1,10 @@
+"""
+Main Window.
+
+Constructs the primary application layout including the Menu Bar, Toolbar, 
+and manages the docking system for all sub-panels and viewport switching.
+"""
+
 from PySide6.QtWidgets import (QMainWindow, QDockWidget, QWidget, QHBoxLayout, QVBoxLayout,
                                QRadioButton, QToolBar, QComboBox, QCheckBox, 
                                QLabel, QFrame, QSpacerItem, QSizePolicy, 
@@ -16,7 +23,13 @@ from src.app.config import (
     RENDER_MODE_FLAT
 )
 
+
 class EditorMainWindow(QMainWindow):
+    """
+    The root QMainWindow of the Editor application.
+    Orchestrates the layout of viewports, toolbars, and dockable panels.
+    """
+
     def __init__(self, controller: Any) -> None:
         super().__init__()
         self._controller = controller
@@ -35,6 +48,7 @@ class EditorMainWindow(QMainWindow):
         ctx.events.subscribe(AppEvent.ENTITY_SELECTED, self._on_entity_selected)
 
     def _setup_shortcuts(self) -> None:
+        """Initializes global application shortcuts (e.g., Undo, Redo)."""
         self.shortcut_undo = QShortcut(QKeySequence("Ctrl+Z"), self)
         self.shortcut_undo.activated.connect(self._controller.project_ctrl.undo)
         
@@ -42,6 +56,7 @@ class EditorMainWindow(QMainWindow):
         self.shortcut_redo.activated.connect(self._controller.project_ctrl.redo)
 
     def set_central_viewport(self, viewport_widget: QWidget) -> None:
+        """Configures the primary 3D viewport and sets up the tabbed preview layout."""
         self.gl_widget = viewport_widget
         
         self.central_container = QFrame()
@@ -72,6 +87,7 @@ class EditorMainWindow(QMainWindow):
         self.setCentralWidget(self.central_container)
 
     def register_dock(self, panel_view: QWidget) -> None:
+        """Wraps a panel view into a QDockWidget and registers it to the main window."""
         title = getattr(panel_view, "PANEL_TITLE", "Panel")
         area = getattr(panel_view, "PANEL_DOCK_AREA", Qt.RightDockWidgetArea)
         
@@ -93,6 +109,7 @@ class EditorMainWindow(QMainWindow):
             self.dock_math.hide() 
 
     def _on_mode_changed(self, index: int) -> None:
+        """Toggles between the interactive 3D viewport and the Synthetic Data Preview canvas."""
         self.stacked_view.setCurrentIndex(index)
         is_preview = (index == 1)
         
@@ -132,6 +149,7 @@ class EditorMainWindow(QMainWindow):
         ctx.events.emit(AppEvent.SCENE_CHANGED)
 
     def _on_entity_selected(self, entity_id: int) -> None:
+        """Dynamically updates the state of toolbar transformation tools based on entity selection."""
         if entity_id < 0:
             return
             
@@ -162,6 +180,7 @@ class EditorMainWindow(QMainWindow):
         elif is_cam:
             self.rad_scl.setEnabled(False) 
 
+        # Auto-switch active tool if the current one becomes disabled
         if self.rad_mov.isChecked() and not self.rad_mov.isEnabled():
             if self.rad_rot.isEnabled(): self.rad_rot.setChecked(True)
             elif self.rad_scl.isEnabled(): self.rad_scl.setChecked(True)
@@ -178,12 +197,14 @@ class EditorMainWindow(QMainWindow):
             else: self._force_uncheck_radio(self.rad_scl)
 
     def _force_uncheck_radio(self, radio: QRadioButton) -> None:
+        """Forces a radio button to uncheck even if it is in an exclusive group."""
         radio.setAutoExclusive(False)
         radio.setChecked(False)
         radio.setAutoExclusive(True)
         self._controller.set_manipulation_mode("NONE")
         
     def create_menu_bar(self) -> None:
+        """Constructs the application's top menu bar."""
         menubar = self.menuBar()
         
         menu_file = menubar.addMenu("File")
@@ -231,6 +252,7 @@ class EditorMainWindow(QMainWindow):
         menu_settings.addAction("Background Color", self.action_change_bg_color)
 
     def create_toolbar(self) -> None:
+        """Constructs the primary toolbar containing tools, render modes, and creation buttons."""
         self.toolbar_workspace = QToolBar("Workspace")
         self.toolbar_workspace.setMovable(False)
         self.addToolBar(Qt.TopToolBarArea, self.toolbar_workspace)
@@ -362,11 +384,13 @@ class EditorMainWindow(QMainWindow):
     # =========================================================================
     
     def _on_preview_mode_changed(self, mode: str) -> None:
+        """Triggers a redraw of the preview viewport when the output mode changes."""
         gen_ctrl = getattr(self._controller, 'generator_ctrl', None)
         if gen_ctrl and hasattr(gen_ctrl, 'refresh_preview_display'):
             gen_ctrl.refresh_preview_display()
 
     def _on_preview_overlay_toggled(self, state: int) -> None:
+        """Toggles the bounding box overlay on the preview viewport."""
         pv = getattr(self, 'preview_viewport', None)
         if pv and pv.display_frame.payload:
             payload_copy = pv.display_frame.payload.copy()
@@ -377,12 +401,14 @@ class EditorMainWindow(QMainWindow):
     # =========================================================================
 
     def _on_tool_changed(self) -> None:
+        """Passes the active transformation tool state to the controller."""
         if self.rad_rot.isChecked(): self._controller.set_manipulation_mode("ROTATE")
         elif self.rad_mov.isChecked(): self._controller.set_manipulation_mode("MOVE")
         elif self.rad_scl.isChecked(): self._controller.set_manipulation_mode("SCALE")
         else: self._controller.set_manipulation_mode("NONE")
         
     def _on_render_settings_changed(self, *args: Any) -> None:
+        """Dispatches global viewport render settings to the controller."""
         is_combined = (self.cmb_render.currentIndex() == 1)
         self.w_comb_opts.setVisible(is_combined)
         
@@ -398,6 +424,7 @@ class EditorMainWindow(QMainWindow):
         )
 
     def show_context_menu(self, pos: QPoint) -> None:
+        """Renders the standard right-click context menu (Cut/Copy/Paste/Visibility)."""
         menu = QMenu(self)
         has_selection = (ctx.engine.get_selected_entity_id() >= 0)
         
@@ -429,13 +456,23 @@ class EditorMainWindow(QMainWindow):
         else:
             menu.exec(pos)
 
-    def action_copy(self) -> None: self._controller.copy_selected()
-    def action_cut(self) -> None: self._controller.cut_selected()
-    def action_paste(self) -> None: self._controller.paste_copied()
-    def action_delete(self) -> None: self._controller.delete_selected()
-    def action_toggle_visibility(self) -> None: self._controller.toggle_visibility_selected()
+    def action_copy(self) -> None: 
+        self._controller.copy_selected()
+        
+    def action_cut(self) -> None: 
+        self._controller.cut_selected()
+        
+    def action_paste(self) -> None: 
+        self._controller.paste_copied()
+        
+    def action_delete(self) -> None: 
+        self._controller.delete_selected()
+        
+    def action_toggle_visibility(self) -> None: 
+        self._controller.toggle_visibility_selected()
 
     def action_change_bg_color(self) -> None:
+        """Opens a color picker to modify the main OpenGL viewport background color."""
         current_bg = getattr(self.gl_widget, 'bg_color', DEFAULT_BG_COLOR)
         color = QColorDialog.getColor(
             QColor.fromRgbF(current_bg[0], current_bg[1], current_bg[2]), 

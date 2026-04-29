@@ -1,3 +1,10 @@
+"""
+Camera Widget.
+
+Provides the Inspector UI for configuring Camera components, allowing users 
+to manipulate projection modes, clipping planes, and Field of View.
+"""
+
 from typing import Any, Dict
 from PySide6.QtWidgets import QFormLayout, QPushButton, QCheckBox, QComboBox, QLabel
 from src.ui.widgets.custom_inputs import SliderSpinBox
@@ -11,7 +18,13 @@ from src.app.config import (
     STYLE_BTN_ACTIVE_CAM, STYLE_BTN_INACTIVE_CAM
 )
 
+
 class CameraWidget(BaseComponentWidget):
+    """
+    Inspector widget handling Camera properties.
+    Manages state toggling between active scene cameras and visual proxy meshes.
+    """
+    
     def __init__(self, controller: Any) -> None:
         super().__init__("Camera", controller)
         f_cam = QFormLayout()
@@ -48,6 +61,7 @@ class CameraWidget(BaseComponentWidget):
         self.layout.addLayout(f_cam)
 
     def update_data(self, cd: Dict[str, Any], mesh_visible: bool) -> None:
+        """Populates the widget fields based on the current camera component state."""
         is_active = bool(cd.get("is_active", cd.get("active", False)))
         if is_active:
             self.btn_set_cam_active.setText("Active Camera")
@@ -96,7 +110,9 @@ class CameraWidget(BaseComponentWidget):
         self.sp_cam_far.blockSignals(False)
 
     def set_active_camera(self) -> None:
-        if not self._controller: return
+        """Sets the selected camera as the primary viewpoint for the scene."""
+        if not self._controller: 
+            return
         self.request_undo_snapshot()
         from src.app import ctx, AppEvent
         ctx.engine.set_active_camera_selected()
@@ -104,7 +120,9 @@ class CameraWidget(BaseComponentWidget):
         ctx.events.emit(AppEvent.SCENE_CHANGED)
 
     def apply_camera(self) -> None:
-        if not self._controller: return
+        """Commits local property modifications to the backend Camera Component."""
+        if not self._controller: 
+            return
             
         mode = ["Perspective", "Orthographic"][self.cmb_cam_mode.currentIndex()]
         is_persp = (mode == "Perspective")

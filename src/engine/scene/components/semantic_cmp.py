@@ -1,17 +1,25 @@
+"""
+Semantic Component.
+
+Stores Ground Truth semantic data for AI dataset generation.
+Includes boundary flags and propagation rules for hierarchical annotation evaluation.
+"""
+
 from typing import Dict, Any
+
 
 class SemanticComponent:
     """
-    Stores Ground Truth semantic data for AI dataset generation.
-    Includes boundary flags and propagation rules for hierarchical evaluation.
+    Tags entities with track IDs and class classifications.
+    Crucial for generating annotated pixel masks and bounding boxes.
     """
+    
     def __init__(self, track_id: int = -1, class_id: int = 0) -> None:
         self.track_id: int = track_id
         self.class_id: int = class_id  
         
         self.is_merged_instance: bool = True
         self.propagate_to_children: bool = True
-        
         self.entity = None
 
     def serialize(self) -> Dict[str, Any]:
@@ -26,7 +34,7 @@ class SemanticComponent:
         }
 
     def deserialize(self, data: Dict[str, Any]) -> None:
-        """Reconstructs component state from JSON."""
+        """Reconstructs annotation state from JSON."""
         self.track_id = data.get("track_id", -1)
         self.class_id = data.get("class_id", 0)
         self.is_merged_instance = data.get("is_merged_instance", True)

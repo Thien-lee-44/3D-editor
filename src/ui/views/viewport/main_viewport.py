@@ -1,3 +1,11 @@
+"""
+Main Viewport.
+
+Provides the primary QOpenGLWidget responsible for rendering the 3D scene.
+Handles low-level input events (mouse, keyboard, drag-and-drop) and delegates 
+them to the Viewport Controller.
+"""
+
 from typing import Any, Optional
 
 from PySide6.QtCore import Qt
@@ -11,11 +19,13 @@ from src.app import AppEvent, ctx
 from src.app.config import (CONTEXT_MENU_STYLE, DEFAULT_BG_COLOR,
                             TEXTURE_CHANNELS, VIEWPORT_HUD_STYLE)
 
+
 class MainViewportView(QOpenGLWidget):
     """
     Main 3D viewport (Dumb View).
     Delegates rendering to the Engine and handles peripheral events.
     """
+
     def __init__(self, controller: Any, parent: Optional[Any] = None) -> None:
         super().__init__(parent)
         self._controller = controller
@@ -41,12 +51,15 @@ class MainViewportView(QOpenGLWidget):
     # =========================================================================
 
     def initializeGL(self) -> None:
+        """Bootstraps the Engine's OpenGL components once the context is ready."""
         ctx.engine.init_viewport_gl()
 
     def resizeGL(self, w: int, h: int) -> None:
+        """Handles widget resizing and updates the Engine's camera aspect ratio."""
         ctx.engine.resize_gl(w, h)
 
     def paintGL(self) -> None:
+        """Issues the render command to the Engine for the current frame."""
         active_axis = self._controller.active_axis
         hovered_axis = self._controller.hovered_axis
         hovered_screen_axis = self._controller.hovered_screen_axis
@@ -59,6 +72,7 @@ class MainViewportView(QOpenGLWidget):
         self._update_hud_labels(hovered_screen_axis)
 
     def _update_hud_labels(self, hovered_screen_axis: str) -> None:
+        """Updates the position and styling of the HUD compass labels."""
         for lbl in self.labels_dict.values():
             lbl.hide()
 
@@ -85,22 +99,26 @@ class MainViewportView(QOpenGLWidget):
     # =========================================================================
 
     def mousePressEvent(self, e: QMouseEvent) -> None:
+        """Delegates mouse press interactions (like picking) to the controller."""
         self.setFocus(Qt.MouseFocusReason)
         self.makeCurrent()
         self._controller.process_press(e.position().x(), e.position().y(), e.button(), self.width(), self.height())
         self.doneCurrent()
 
     def mouseReleaseEvent(self, e: QMouseEvent) -> None:
+        """Clears drag states in the controller upon mouse release."""
         self.makeCurrent()
         self._controller.process_release(e.button())
         self.doneCurrent()
 
     def mouseMoveEvent(self, e: QMouseEvent) -> None:
+        """Delegates continuous mouse dragging to the controller."""
         self.makeCurrent()
         self._controller.process_move(e.position().x(), e.position().y(), e.buttons(), self.width(), self.height())
         self.doneCurrent()
 
     def keyPressEvent(self, e: QKeyEvent) -> None:
+        """Handles viewport-specific keyboard shortcuts and delegates movement keys."""
         if e.isAutoRepeat():
             return
 
@@ -121,16 +139,19 @@ class MainViewportView(QOpenGLWidget):
             self._controller.process_key_press(e.key())
 
     def keyReleaseEvent(self, e: QKeyEvent) -> None:
+        """Releases the movement state for keys in the controller."""
         if e.isAutoRepeat():
             return
         self._controller.process_key_release(e.key())
 
     def wheelEvent(self, e: QWheelEvent) -> None:
+        """Delegates mouse wheel scroll events to adjust camera zoom."""
         ctx.engine.zoom_camera(e.angleDelta().y() / 240.0)
         ctx.events.emit(AppEvent.SCENE_CHANGED)
         ctx.events.emit(AppEvent.ENTITY_SELECTED, ctx.engine.get_selected_entity_id())
 
     def focusOutEvent(self, e: QFocusEvent) -> None:
+        """Clears all key commands when the viewport loses focus."""
         self._controller.clear_keys()
         super().focusOutEvent(e)
 
@@ -139,16 +160,19 @@ class MainViewportView(QOpenGLWidget):
     # =========================================================================
 
     def dragEnterEvent(self, e: QDragEnterEvent) -> None:
+        """Accepts structural elements dropping from the Asset Browser."""
         if e.mimeData().hasText() and (e.mimeData().text().startswith("MODEL|") or e.mimeData().text().startswith("TEXTURE|")):
             e.setDropAction(Qt.CopyAction)
             e.accept()
 
     def dragMoveEvent(self, e: QDragMoveEvent) -> None:
+        """Accepts mouse moves while dragging items over the viewport."""
         if e.mimeData().hasText() and (e.mimeData().text().startswith("MODEL|") or e.mimeData().text().startswith("TEXTURE|")):
             e.setDropAction(Qt.CopyAction)
             e.accept()
 
     def dropEvent(self, e: QDropEvent) -> None:
+        """Processes instantiation of models or application of textures dropped into the 3D scene."""
         parts = e.mimeData().text().split("|", 1)
         if len(parts) < 2:
             return
@@ -175,6 +199,7 @@ class MainViewportView(QOpenGLWidget):
         e.accept()
 
     def _show_texture_mapping_menu(self, path: str) -> None:
+        """Spawns a context menu to choose which material channel receives the dropped texture."""
         menu = QMenu(self)
         menu.setTitle("Apply Texture As:")
         menu.setStyleSheet(CONTEXT_MENU_STYLE)

@@ -1,25 +1,27 @@
+"""
+Application Bootstrapper.
+Initializes context, UI frameworks, and underlying 3D subsystems.
+"""
+
 import sys
+import logging
 from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import Qt, QCoreApplication
 from PySide6.QtGui import QSurfaceFormat
-from src.app.config import APP_TITLE
-# Absolute imports ensuring unified memory space
+from src.app.config import APP_TITLE, MSAA_SAMPLES, TEXTURES_DIR
 from src.engine import Engine
-from src.app import ctx, AppEvent, config
+from src.app import ctx, AppEvent
 from src.ui.controllers.main_ctrl import MainController
-
-# IMPORT: Bring in the error handler initialization
 from src.ui.error_handler import init_global_error_handler
 
 def run_app() -> None:
     """
-    Application Bootstrapper.
-    Configures Qt/OpenGL systems, instantiates the 3D Engine backend, 
-    and launches the Main Controller.
+    Configures Qt and OpenGL systems, provisions the Engine instance,
+    and executes the primary UI event loop.
     """
-    # 1. Global OpenGL Surface Configuration
+    # Configure global OpenGL format
     fmt = QSurfaceFormat()
-    fmt.setSamples(config.MSAA_SAMPLES) 
+    fmt.setSamples(MSAA_SAMPLES) 
     QSurfaceFormat.setDefaultFormat(fmt)
     
     QCoreApplication.setAttribute(Qt.AA_ShareOpenGLContexts)
@@ -28,23 +30,22 @@ def run_app() -> None:
     app.setApplicationName(APP_TITLE)
     app.setStyle("Fusion")
     
-    # =========================================================================
-    # 2. INITIALIZE ERROR HANDLER (Must be exactly here: after app creation)
-    # =========================================================================
+    # Bind custom error handling post-QApplication initialization
     init_global_error_handler()
     
     try:
-        # 3. CORE BOOTSTRAP
+        # Initialize Core Engine and inject into Singleton Context
         engine_instance = Engine()
         ctx.engine = engine_instance
         
-        # 4. UI BOOTSTRAP
+        # Initialize and display Main UI
         root_controller = MainController()
         root_controller.main_window.show()
         
-        # 5. ASSET AUTOLOAD
-        ctx.engine.auto_load_default_assets(config.TEXTURES_DIR)
+        # Load default system resources
+        ctx.engine.auto_load_default_assets(TEXTURES_DIR)
         
+        # Broadcast initial state requirements
         ctx.events.emit(AppEvent.HIERARCHY_NEEDS_REFRESH)     
         ctx.events.emit(AppEvent.ASSET_BROWSER_NEEDS_REFRESH) 
         
@@ -52,9 +53,9 @@ def run_app() -> None:
         ctx.events.emit(AppEvent.ENTITY_SELECTED, current_id)
         ctx.events.emit(AppEvent.SCENE_CHANGED)               
         
-        # 6. ENTER QT EVENT LOOP
+        # Launch UI event loop
         sys.exit(app.exec())
         
     except Exception as e:
-        print(e)
+        logging.critical(f"Fatal application error during bootstrap: {e}", exc_info=True)
         sys.exit(1)

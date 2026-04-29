@@ -1,9 +1,23 @@
+"""
+Timeline Track Widget.
+
+Provides the interactive track area representing keyframes over time.
+Supports drawing keyframes, box selection, and complex drag-and-drop operations 
+(Move, Scale, Copy) with modifier keys.
+"""
+
 from PySide6.QtWidgets import QWidget
 from PySide6.QtGui import QPainter, QColor, QPen, QPolygon, QMouseEvent, QKeyEvent
 from PySide6.QtCore import Qt, Signal, QPoint
-from typing import List, Set, Dict
+from typing import List, Set, Dict, Any
+
 
 class TimelineTrackWidget(QWidget):
+    """
+    Visual track component for the Dope Sheet. 
+    Handles rendering of keyframe diamonds, selection highlighting, and input 
+    events for timeline modifications.
+    """
     time_scrubbed = Signal(float)
     keyframe_selected = Signal(int)
     keyframes_mutated = Signal(dict)
@@ -39,26 +53,32 @@ class TimelineTrackWidget(QWidget):
         self.COLOR_BOX_BORDER = QColor(66, 165, 245, 150)
         
     def set_max_time(self, t: float) -> None:
+        """Updates the maximum visible duration scale."""
         self.duration_max = max(0.1, t)
         self.update()
         
     def set_time(self, t: float) -> None:
+        """Moves the playhead to the target time."""
         self.current_time = max(0.0, min(self.duration_max, t))
         self.update()
         
     def set_keyframes(self, kf_times: List[float]) -> None:
+        """Loads a new array of keyframe timestamps and sanitizes active selection."""
         self.keyframes = kf_times
         self.selected_indices = {i for i in self.selected_indices if i < len(self.keyframes)}
         self.update()
 
     def _time_to_x(self, t: float) -> float:
+        """Converts logical time to horizontal pixel coordinate."""
         return (t / self.duration_max) * self.width()
 
     def _x_to_time(self, x: float) -> float:
+        """Converts horizontal pixel coordinate back to logical time."""
         t = (x / self.width()) * self.duration_max
         return max(0.0, min(self.duration_max, t))
 
     def _get_kf_at_pos(self, x: float) -> int:
+        """Checks if a given pixel X-coordinate intersects with any drawn keyframe."""
         threshold = 8 
         for i, kf_time in enumerate(self.keyframes):
             kf_x = self._time_to_x(kf_time)
@@ -66,7 +86,8 @@ class TimelineTrackWidget(QWidget):
                 return i
         return -1
 
-    def paintEvent(self, event) -> None:
+    def paintEvent(self, event: Any) -> None:
+        """Draws the track background, grid lines, keyframes, drag-ghosts, and playhead."""
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
         
@@ -77,15 +98,19 @@ class TimelineTrackWidget(QWidget):
         painter.setPen(QPen(self.COLOR_GRID, 1))
         
         step_sec = 1.0
-        if self.duration_max > 20.0: step_sec = 5.0
-        if self.duration_max < 2.0: step_sec = 0.1
+        if self.duration_max > 20.0: 
+            step_sec = 5.0
+        if self.duration_max < 2.0: 
+            step_sec = 0.1
         
+        # Draw primary vertical grid lines
         num_ticks = int(self.duration_max / step_sec) + 1
         for i in range(num_ticks):
             t = i * step_sec
             x = self._time_to_x(t)
             painter.drawLine(int(x), 0, int(x), h)
             
+        # Draw sub-division ticks at the top edge
         sub_ticks = int(self.duration_max / (step_sec / 5)) + 1
         for i in range(sub_ticks):
             t = i * (step_sec / 5)
@@ -94,6 +119,7 @@ class TimelineTrackWidget(QWidget):
             
         y_center = h // 2
         
+        # Draw Ghost Keyframes (visual preview during dragging)
         for t in self.ghost_keyframes:
             x = int(self._time_to_x(t))
             painter.setBrush(QColor(255, 165, 0, 100))
@@ -105,13 +131,17 @@ class TimelineTrackWidget(QWidget):
             ])
             painter.drawPolygon(poly)
 
+        # Draw Actual Keyframes
         for i, kf_time in enumerate(self.keyframes):
             x = int(self._time_to_x(kf_time))
             is_selected = (i in self.selected_indices)
             
-            if is_selected: color = self.COLOR_KF_SELECTED
-            elif i == 0: color = self.COLOR_KF_BASE
-            else: color = self.COLOR_KF_NORMAL
+            if is_selected: 
+                color = self.COLOR_KF_SELECTED
+            elif i == 0: 
+                color = self.COLOR_KF_BASE
+            else: 
+                color = self.COLOR_KF_NORMAL
             
             painter.setBrush(color)
             painter.setPen(Qt.NoPen)
@@ -123,6 +153,7 @@ class TimelineTrackWidget(QWidget):
             ])
             painter.drawPolygon(poly)
             
+        # Draw Box Selection overlay
         if self.is_box_selecting:
             rx = min(self.box_start_x, self.box_end_x)
             rw = abs(self.box_start_x - self.box_end_x)
@@ -130,6 +161,7 @@ class TimelineTrackWidget(QWidget):
             painter.setPen(QPen(self.COLOR_BOX_BORDER, 1))
             painter.drawRect(int(rx), 0, int(rw), h - 1)
             
+        # Draw Playhead Indicator
         x_playhead = int(self._time_to_x(self.current_time))
         painter.setPen(QPen(self.COLOR_PLAYHEAD, 2))
         painter.drawLine(x_playhead, 0, x_playhead, h)
@@ -142,11 +174,13 @@ class TimelineTrackWidget(QWidget):
         painter.drawPolygon(cap)
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
+        """Handles keyframe selection, modifier states, and drag initiation."""
         if event.button() == Qt.LeftButton:
             x = event.position().x()
             clicked_kf = self._get_kf_at_pos(x)
             
             if clicked_kf != -1:
+                # Modifier-based multi-selection
                 if event.modifiers() & Qt.ShiftModifier:
                     if clicked_kf in self.selected_indices:
                         self.selected_indices.remove(clicked_kf)
@@ -159,6 +193,7 @@ class TimelineTrackWidget(QWidget):
                 rep_idx = list(self.selected_indices)[0] if self.selected_indices else -1
                 self.keyframe_selected.emit(rep_idx)
                 
+                # Setup context for timeline manipulation (Move/Scale/Copy)
                 self.drag_initial_times = {i: self.keyframes[i] for i in self.selected_indices}
                 if self.drag_initial_times:
                     self.drag_start_time = self._x_to_time(x)
@@ -176,6 +211,7 @@ class TimelineTrackWidget(QWidget):
                     self.selected_indices.clear()
                     self.keyframe_selected.emit(-1)
                 
+                # Initiate marquee selection
                 self.is_box_selecting = True
                 self.box_start_x = x
                 self.box_end_x = x
@@ -183,6 +219,7 @@ class TimelineTrackWidget(QWidget):
             self.update()
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:
+        """Processes live box selection or drag previews (move, scale, copy) based on active state."""
         x = event.position().x()
         
         if self.is_box_selecting:
@@ -210,6 +247,7 @@ class TimelineTrackWidget(QWidget):
             self.update()
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
+        """Finalizes selection or commits drag operations via signaling."""
         if event.button() == Qt.LeftButton:
             if self.is_box_selecting:
                 min_x = min(self.box_start_x, self.box_end_x)
@@ -238,6 +276,7 @@ class TimelineTrackWidget(QWidget):
             self.update()
 
     def keyPressEvent(self, event: QKeyEvent) -> None:
+        """Processes keyboard commands, specifically deletion of selected keyframes."""
         if event.key() in (Qt.Key_Delete, Qt.Key_Backspace):
             if 0 in self.selected_indices:
                 pass

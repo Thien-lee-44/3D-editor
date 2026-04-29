@@ -1,5 +1,13 @@
+"""
+Light Component Widget.
+
+Provides the Inspector UI for configuring illumination parameters.
+Features independent control over light types (Directional, Point, Spot), 
+color intensities, and spatial attenuation metrics.
+"""
+
 import math
-from typing import Any, Dict
+from typing import Any, Dict, List, Tuple, Optional
 from PySide6.QtWidgets import (QWidget, QHBoxLayout, QLabel, QCheckBox, 
                                QComboBox, QFormLayout, QVBoxLayout)
 
@@ -16,15 +24,18 @@ from src.app.config import (
     LIGHT_CUTOFF_RANGE, LIGHT_ATTEN_CONST_RANGE, LIGHT_ATTEN_LIN_RANGE, LIGHT_ATTEN_QUAD_RANGE
 )
 
+
 class LightWidget(BaseComponentWidget):
     """
     Inspector widget for Light parameters.
     Implements Atomic Payload Batching to ensure smooth UI slider performance
     without triggering redundant Engine synchronization cycles.
     """
+
     def __init__(self, controller: Any) -> None:
         super().__init__("Light", controller)
         
+        # --- Visibility & Proxy Control ---
         row_light_top = QHBoxLayout()
         self.chk_light_on = QCheckBox("Enable Light")
         self.chk_light_on.clicked.connect(self.request_undo_snapshot)
@@ -38,19 +49,22 @@ class LightWidget(BaseComponentWidget):
         row_light_top.addWidget(self.chk_light_proxy)
         self.layout.addLayout(row_light_top)
         
+        # --- Light Classification ---
         row_l_type = QHBoxLayout()
         row_l_type.addWidget(QLabel("Type:"))
         self.cmb_light_type = QComboBox()
         self.cmb_light_type.addItems(["Directional", "Point", "Spot"])
-        self.cmb_light_type.setEnabled(False) 
+        self.cmb_light_type.setEnabled(False) # Type is currently locked after spawning
         row_l_type.addWidget(self.cmb_light_type)
         self.layout.addLayout(row_l_type)
 
+        # --- Primary Intensity ---
         flp = QFormLayout()
         self.sp_light_int = SliderSpinBox(*LIGHT_INTENSITY_RANGE, 0.1, DEFAULT_LIGHT_INTENSITY, self.apply_light, press_callback=self.request_undo_snapshot)
         flp.addRow("Intensity:", self.sp_light_int)
         self.layout.addLayout(flp)
 
+        # --- Shading Modes ---
         row_l_mode = QHBoxLayout()
         row_l_mode.addWidget(QLabel("Color Mode:"))
         self.cmb_light_mode = QComboBox()
@@ -60,6 +74,7 @@ class LightWidget(BaseComponentWidget):
         row_l_mode.addWidget(self.cmb_light_mode)
         self.layout.addLayout(row_l_mode)
 
+        # --- Mode: Basic ---
         self.w_l_basic = QWidget()
         flb = QFormLayout(self.w_l_basic)
         flb.setContentsMargins(0, 0, 0, 0)
@@ -73,6 +88,7 @@ class LightWidget(BaseComponentWidget):
         flb.addRow("Specular Factor:", self.sp_l_spec)
         self.layout.addWidget(self.w_l_basic)
 
+        # --- Mode: Advanced ---
         self.w_l_adv = QWidget()
         fla = QFormLayout(self.w_l_adv)
         fla.setContentsMargins(0, 0, 0, 0)
@@ -84,6 +100,7 @@ class LightWidget(BaseComponentWidget):
         fla.addRow("Specular:", row_spec)
         self.layout.addWidget(self.w_l_adv)
 
+        # --- Directional Orientation (Spherical Coordinates) ---
         self.w_light_dir = QWidget()
         l_dir = QFormLayout(self.w_light_dir)
         l_dir.setContentsMargins(0, 0, 0, 0)
@@ -93,6 +110,7 @@ class LightWidget(BaseComponentWidget):
         l_dir.addRow("Pitch:", self.sp_light_pitch)
         self.layout.addWidget(self.w_light_dir)
 
+        # --- Spot Cutoff Limits ---
         self.w_light_spot = QWidget()
         l_spot = QFormLayout(self.w_light_spot)
         l_spot.setContentsMargins(0, 0, 0, 0)
@@ -102,6 +120,7 @@ class LightWidget(BaseComponentWidget):
         l_spot.addRow("Outer Cutoff:", self.sp_light_out)
         self.layout.addWidget(self.w_light_spot)
 
+        # --- Spatial Attenuation (Falloff) ---
         self.w_light_atten = QWidget()
         l_atten = QFormLayout(self.w_light_atten)
         l_atten.setContentsMargins(0, 0, 0, 0)
@@ -113,6 +132,7 @@ class LightWidget(BaseComponentWidget):
         l_atten.addRow("Quadratic:", self.sp_l_quad)
         self.layout.addWidget(self.w_light_atten)
 
+        # --- Sun Direction Viewport ---
         self.sun_hud_container = QWidget()
         sun_lay = QVBoxLayout(self.sun_hud_container)
         sun_lay.setContentsMargins(0, 10, 0, 0)
@@ -123,20 +143,29 @@ class LightWidget(BaseComponentWidget):
         self.layout.addWidget(self.sun_hud_container)
 
     def update_data(self, ld: Dict[str, Any], mesh_visible: bool) -> None:
+        """
+        Refreshes widget fields based on the active Light component.
+        Contextually hides/shows sub-panels (Attenuation, Spot Cutoff, HUD) 
+        based on the light type.
+        """
+        # --- Type Selection ---
         self.cmb_light_type.blockSignals(True)
         self.cmb_light_type.setCurrentIndex(["Directional", "Point", "Spot"].index(ld["type"]) if ld.get("type") in ["Directional", "Point", "Spot"] else 1)
         self.cmb_light_type.blockSignals(False)
         
-        self.w_light_dir.setVisible(ld.get("type") in ["Directional", "Spot"])
-        self.w_light_spot.setVisible(ld.get("type") == "Spot")
-        self.sun_hud_container.setVisible(ld.get("type") == "Directional")
+        # Conditional visibility based on Light Type
+        l_type = ld.get("type")
+        self.w_light_dir.setVisible(l_type in ["Directional", "Spot"])
+        self.w_light_spot.setVisible(l_type == "Spot")
+        self.sun_hud_container.setVisible(l_type == "Directional")
 
+        # --- Visibility Checkboxes ---
         self.chk_light_on.blockSignals(True)
         self.chk_light_on.setChecked(ld.get("on", True))
         self.chk_light_on.blockSignals(False)
         
         self.chk_light_proxy.blockSignals(True)
-        if ld.get("type") == "Directional":
+        if l_type == "Directional":
             self.chk_light_proxy.setChecked(False)
             self.chk_light_proxy.setEnabled(False)
             self.chk_light_proxy.setText("Hidden (No Proxy)")
@@ -146,6 +175,7 @@ class LightWidget(BaseComponentWidget):
             self.chk_light_proxy.setChecked(mesh_visible)
         self.chk_light_proxy.blockSignals(False)
         
+        # --- Core Parameters ---
         self.sp_light_int.setValue(ld.get("intensity", DEFAULT_LIGHT_INTENSITY))
         
         self.cmb_light_mode.blockSignals(True)
@@ -155,6 +185,7 @@ class LightWidget(BaseComponentWidget):
         self.w_l_basic.setVisible(not ld.get("use_advanced_mode", False))
         self.w_l_adv.setVisible(ld.get("use_advanced_mode", False))
 
+        # --- Color & Strengths ---
         self.sp_l_amb.setValue(ld.get("ambient_strength", DEFAULT_LIGHT_AMBIENT))
         self.sp_l_diff.setValue(ld.get("diffuse_strength", DEFAULT_LIGHT_DIFFUSE))
         self.sp_l_spec.setValue(ld.get("specular_strength", DEFAULT_LIGHT_SPECULAR))
@@ -164,28 +195,33 @@ class LightWidget(BaseComponentWidget):
         set_vec3_spinboxes(self.sp_light_diff_vec, ld.get("explicit_diffuse", list(DEFAULT_LIGHT_COLOR)))
         set_vec3_spinboxes(self.sp_light_spec_vec, ld.get("explicit_specular", list(DEFAULT_LIGHT_COLOR)))
 
+        # Visual button coloring
         self.btn_light_base.setStyleSheet(rgb_to_hex(ld.get("color", list(DEFAULT_LIGHT_COLOR))))
         self.btn_l_amb_c.setStyleSheet(rgb_to_hex(ld.get("explicit_ambient", list(DEFAULT_LIGHT_COLOR))))
         self.btn_l_diff_c.setStyleSheet(rgb_to_hex(ld.get("explicit_diffuse", list(DEFAULT_LIGHT_COLOR))))
         self.btn_l_spec_c.setStyleSheet(rgb_to_hex(ld.get("explicit_specular", list(DEFAULT_LIGHT_COLOR))))
 
-        if ld.get("type") == "Spot":
+        # --- Specialized Light Logic ---
+        if l_type == "Spot":
             self.sp_light_cut.setValue(math.degrees(math.acos(max(-1.0, min(1.0, ld.get("cutOff", math.cos(math.radians(DEFAULT_SPOT_INNER_ANGLE))))))))
             self.sp_light_out.setValue(math.degrees(math.acos(max(-1.0, min(1.0, ld.get("outerCutOff", math.cos(math.radians(DEFAULT_SPOT_OUTER_ANGLE))))))))
 
         self.fast_update(ld)
         
-        self.w_light_atten.setVisible(ld.get("type") in ["Point", "Spot"])
+        self.w_light_atten.setVisible(l_type in ["Point", "Spot"])
         self.sp_l_const.setValue(ld.get("constant", DEFAULT_LIGHT_CONSTANT))
         self.sp_l_lin.setValue(ld.get("linear", DEFAULT_LIGHT_LINEAR))
         self.sp_l_quad.setValue(ld.get("quadratic", DEFAULT_LIGHT_QUADRATIC))
 
     def fast_update(self, ld: Dict[str, Any]) -> None:
-        if not ld or ld.get("type") not in ["Directional", "Spot"]: return
+        """Rapidly updates orientation spinboxes without a full widget rebuild."""
+        if not ld or ld.get("type") not in ["Directional", "Spot"]: 
+            return
         self.sp_light_yaw.setValue(ld.get("yaw", 0.0))
         self.sp_light_pitch.setValue(ld.get("pitch", 0.0))
 
-    def fast_update_rotation(self, rot_values: tuple) -> None:
+    def fast_update_rotation(self, rot_values: Tuple[float, float]) -> None:
+        """Specifically used by the SunHUD to push live dragging values into the spinboxes."""
         self.sp_light_pitch.blockSignals(True)
         self.sp_light_yaw.blockSignals(True)
         self.sp_light_pitch.setValue(rot_values[0]) 
@@ -194,7 +230,9 @@ class LightWidget(BaseComponentWidget):
         self.sp_light_yaw.blockSignals(False)
 
     def apply_light(self) -> None:
-        if not self._controller: return
+        """Collects all scalar light parameters and dispatches an atomic payload to the engine."""
+        if not self._controller: 
+            return
             
         payload = {
             "on": self.chk_light_on.isChecked(),
@@ -210,6 +248,7 @@ class LightWidget(BaseComponentWidget):
         if self.cmb_light_type.currentText() == "Spot":
             c, o = self.sp_light_cut.value(), self.sp_light_out.value()
             if c > o: 
+                # Enforce logical constraint: Inner angle must be <= Outer angle
                 o = c
                 self.sp_light_out.blockSignals(True)
                 self.sp_light_out.setValue(o)
@@ -220,17 +259,23 @@ class LightWidget(BaseComponentWidget):
         self._controller.set_properties("Light", payload)
 
     def apply_light_proxy(self) -> None:
-        if not self._controller: return
+        """Toggles the visibility of the visual proxy mesh representing the light source."""
+        if not self._controller: 
+            return
         self._controller.set_properties("Mesh", {"visible": self.chk_light_proxy.isChecked()})
 
     def switch_light_mode(self, idx: int) -> None:
-        if not self._controller: return
+        """Toggles between simplified and advanced color shading logic."""
+        if not self._controller: 
+            return
         self._controller.set_properties("Light", {"use_advanced_mode": idx == 1})
         self.w_l_basic.setVisible(idx == 0)
         self.w_l_adv.setVisible(idx == 1)
 
     def apply_light_vec_colors(self) -> None:
-        if not self._controller: return
+        """Dispatches an atomic update for all RGB color properties."""
+        if not self._controller: 
+            return
         base_c = [s.value() for s in self.sp_light_base_vec]
         amb_c = [s.value() for s in self.sp_light_amb_vec]
         diff_c = [s.value() for s in self.sp_light_diff_vec]
@@ -250,9 +295,11 @@ class LightWidget(BaseComponentWidget):
         self.btn_l_spec_c.setStyleSheet(rgb_to_hex(spec_c))
 
     def pick_light_color(self, c_type: str) -> None:
+        """Opens a color picker dialog and syncs the selection with the engine and UI."""
         from src.app import ctx
         data = ctx.engine.get_selected_entity_data()
-        if not data or not data.get("light"): return
+        if not data or not data.get("light"): 
+            return
         
         prop_map = {
             'base': 'color', 
@@ -261,7 +308,8 @@ class LightWidget(BaseComponentWidget):
             'spec': 'explicit_specular'
         }
         prop_name = prop_map.get(c_type)
-        if not prop_name: return
+        if not prop_name: 
+            return
 
         curr_c = data["light"].get(prop_name, list(DEFAULT_LIGHT_COLOR))
         new_c = self._pick_color_with_dialog(curr_c)
@@ -286,8 +334,11 @@ class LightWidget(BaseComponentWidget):
             set_vec3_spinboxes(vec_map[c_type], new_c)
             btn_map[c_type].setStyleSheet(rgb_to_hex(new_c))
             
+            from src.app import AppEvent
             ctx.events.emit(AppEvent.SCENE_CHANGED)
 
     def apply_light_direction(self) -> None:
-        if not self._controller: return
+        """Passes Euler angles to the controller for light orientation."""
+        if not self._controller: 
+            return
         self._controller.update_light_direction(self.sp_light_yaw.value(), self.sp_light_pitch.value())

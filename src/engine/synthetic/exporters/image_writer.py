@@ -1,10 +1,21 @@
+"""
+Image Data Exporter.
+
+Provides utility functions to serialize raw byte/numpy arrays into 
+standard image formats (JPEG, PNG) and NumPy binaries (.npy) for AI training.
+"""
+
 import numpy as np
 from PIL import Image
 from typing import Optional
 
+
 class ImageWriter:
+    """Handles the disk I/O operations for rendered image and depth buffers."""
+
     @staticmethod
     def save_rgb(filepath: str, pixel_data: bytes, width: int, height: int) -> None:
+        """Decodes raw RGB bytes and saves them as a standard JPEG image."""
         arr = np.frombuffer(pixel_data, dtype=np.uint8).reshape((height, width, 3))
         img = Image.fromarray(arr, 'RGB')
         img = img.transpose(Image.FLIP_TOP_BOTTOM)
@@ -12,6 +23,7 @@ class ImageWriter:
 
     @staticmethod
     def save_mask(filepath: str, pixel_data: bytes, width: int, height: int) -> None:
+        """Decodes raw RGB mask bytes and saves them as a lossless PNG image."""
         arr = np.frombuffer(pixel_data, dtype=np.uint8).reshape((height, width, 3))
         img = Image.fromarray(arr, 'RGB')
         img = img.transpose(Image.FLIP_TOP_BOTTOM)
@@ -26,6 +38,7 @@ class ImageWriter:
         near: Optional[float] = None,
         far: Optional[float] = None,
     ) -> None:
+        """Normalizes and saves a 32-bit floating-point depth map into an 8-bit grayscale PNG."""
         depth_map = np.array(depth_data, dtype=np.float32).reshape((height, width))
         valid_mask = np.isfinite(depth_map) & (depth_map > 0.0)
 
@@ -51,6 +64,7 @@ class ImageWriter:
 
     @staticmethod
     def save_depth_npy(filepath: str, depth_data: np.ndarray, width: int, height: int) -> None:
+        """Serializes the raw 32-bit floating-point depth matrix into a NumPy binary file (.npy)."""
         depth_map = np.array(depth_data, dtype=np.float32).reshape((height, width))
         depth_map = np.flipud(depth_map)
         np.save(filepath, depth_map)

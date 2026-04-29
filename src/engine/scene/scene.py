@@ -1,3 +1,11 @@
+"""
+Scene Container.
+
+Acts as the primary state container for the 3D world context, orchestrating all active entities.
+Employs Data-Oriented Design principles (Structural Caching) to optimize the render loop.
+Strictly decoupled from entity instantiation logic.
+"""
+
 import re
 from typing import List, Tuple
 
@@ -5,11 +13,10 @@ from src.engine.scene.entity import Entity
 from src.engine.scene.components import TransformComponent, MeshRenderer, LightComponent, CameraComponent
 from src.app.config import DEFAULT_MANIPULATION_MODE
 
+
 class Scene:
     """
-    Acts as the primary state container for the 3D world context, orchestrating all active entities.
-    Employs Data-Oriented Design principles (Structural Caching) to optimize the render loop.
-    Strictly decoupled from entity instantiation logic.
+    Main memory repository representing the active World State.
     """
     
     def __init__(self) -> None:
@@ -18,7 +25,7 @@ class Scene:
         self.manipulation_mode: str = DEFAULT_MANIPULATION_MODE
         self.show_screen_axis: bool = True
         
-        # Render caches for rapid access during the rendering loop
+        # Render caches for rapid continuous memory access during the frame loop
         self.cached_cameras: List[Tuple[TransformComponent, CameraComponent, Entity]] = []
         self.cached_lights: List[Tuple[TransformComponent, LightComponent, Entity]] = []
         self.cached_renderables: List[Tuple[TransformComponent, MeshRenderer, Entity]] = []
@@ -26,7 +33,8 @@ class Scene:
     def _rebuild_cache(self) -> None:
         """
         Categorizes and explicitly caches active components. 
-        This is a deterministic function triggered exclusively whenever the scene topology mutates.
+        This is a deterministic function triggered exclusively whenever the scene topology mutates,
+        preventing O(N) linear lookups during the critical rendering path.
         """
         self.cached_cameras.clear()
         self.cached_lights.clear()
@@ -50,7 +58,10 @@ class Scene:
                 self.cached_renderables.append((tf, mesh, ent))
 
     def _get_unique_name(self, desired_name: str) -> str:
-        """Ensures entity names remain strictly unique within the hierarchy."""
+        """
+        Ensures entity names remain strictly unique within the hierarchy.
+        Utilizes RegEx to auto-increment trailing integer suffixes (e.g., 'Cube (1)').
+        """
         existing_names = {e.name for e in self.entities}
         if desired_name not in existing_names: 
             return desired_name
@@ -80,9 +91,11 @@ class Scene:
         if 0 <= index < len(self.entities):
             ent = self.entities[index]
             
+            # Detach from parent
             if ent.parent: 
                 ent.parent.remove_child(ent, keep_world=False)
                 
+            # Recursively cull children
             for child in list(ent.children): 
                 if child in self.entities: 
                     self.remove_entity(self.entities.index(child))

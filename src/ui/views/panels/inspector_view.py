@@ -1,7 +1,14 @@
+"""
+Inspector View.
+
+Provides the Properties Panel UI.
+Dynamically displays widgets corresponding to the components attached to the selected entity.
+"""
+
 import glm
 from PySide6.QtWidgets import QVBoxLayout, QScrollArea, QWidget
 from PySide6.QtCore import Qt
-from typing import Any, Dict
+from typing import Any, Dict, Tuple
 
 from src.app import ctx
 from src.ui.views.panels.base_panel import BasePanel
@@ -20,13 +27,16 @@ from src.app.config import (
     DEFAULT_UI_MARGIN
 )
 
+
 class InspectorPanelView(BasePanel):
     """Orchestrates data routing between Live World State and the Dynamic Keyframe Bag."""
+    
     PANEL_TITLE = PANEL_TITLE_INSPECTOR
     PANEL_DOCK_AREA = Qt.RightDockWidgetArea
     PANEL_MIN_WIDTH = PANEL_MIN_WIDTH_INSPECTOR
 
     def setup_ui(self) -> None:
+        """Initializes the vertical layout and scroll area for the inspector properties."""
         self.layout = QVBoxLayout(self)
         self.layout.setContentsMargins(0, 0, 0, 0)
         
@@ -63,12 +73,18 @@ class InspectorPanelView(BasePanel):
         self.hide_all_components()
 
     def hide_all_components(self) -> None:
+        """Hides all component widgets when no entity is selected."""
         self.content.setStyleSheet("")
-        for w in [self.header_widget, self.semantic_widget, self.animation_widget, 
-                  self.transform_widget, self.mesh_widget, self.light_widget, self.camera_widget]:
-            w.setVisible(False)
+        self.header_widget.setVisible(False)
+        self.semantic_widget.setVisible(False)
+        self.animation_widget.setVisible(False)
+        self.transform_widget.setVisible(False)
+        self.mesh_widget.setVisible(False)
+        self.light_widget.setVisible(False)
+        self.camera_widget.setVisible(False)
 
     def update_inspector_data(self, data: Dict[str, Any]) -> None:
+        """Populates the individual widgets with data from the Engine context."""
         kf_idx = data.get("active_keyframe_index", -1)
         anim_data = data.get("anim", {})
         keyframes = anim_data.get("keyframes", [])
@@ -79,7 +95,7 @@ class InspectorPanelView(BasePanel):
         has_semantic = bool(data.get("semantic"))
         has_anim = bool(data.get("anim"))
         
-        # Hide MeshWidget if the entity is a Light or Camera (proxy meshes should not be edited)
+        # Hide MeshWidget if entity is Light or Camera
         has_mesh = bool(data.get("mesh")) and not has_light and not has_cam
         
         tf_data = data.get("tf", {})
@@ -87,26 +103,22 @@ class InspectorPanelView(BasePanel):
         mesh_data = data.get("mesh", {})
         cam_data = data.get("cam", {})
         
-        # KEYFRAME BAG EXTRACTION
         if 0 <= kf_idx < len(keyframes):
             kf_state = keyframes[kf_idx].get("state", {})
             
             if "Transform" in kf_state:
                 snap_tf = kf_state["Transform"]
-                if "position" in snap_tf: tf_data["position"] = snap_tf["position"]
-                if "scale" in snap_tf: tf_data["scale"] = snap_tf["scale"]
-                if "rotation" in snap_tf: tf_data["rotation"] = snap_tf["rotation"]
-                if "quat_rot" in snap_tf: tf_data["quat_rot"] = snap_tf["quat_rot"]
-                    
+                for key in ["position", "scale", "rotation", "quat_rot"]:
+                    if key in snap_tf:
+                        tf_data[key] = snap_tf[key]
+                        
             if "Light" in kf_state:
                 light_data = dict(data.get("light", {}))
-                for key, val in kf_state["Light"].items():
-                    light_data[key] = val
+                light_data.update(kf_state["Light"])
                         
             if "Mesh" in kf_state:
                 mesh_data = dict(data.get("mesh", {}))
-                for key, val in kf_state["Mesh"].items():
-                    mesh_data[key] = val
+                mesh_data.update(kf_state["Mesh"])
 
             if "Camera" in kf_state:
                 cam_data = dict(data.get("cam", {}))
@@ -121,13 +133,15 @@ class InspectorPanelView(BasePanel):
         self.header_widget.update_data(data.get("name", "Entity"))
         self.header_widget.setVisible(True)
         
-        if has_semantic:
-            self.semantic_widget.update_data(data["semantic"])
+       
+        
+        if has_semantic: 
+            self.semantic_widget.update_data(data.get("semantic"))
             self.semantic_widget.setVisible(True)
         else:
             self.semantic_widget.setVisible(False)
             
-        if has_anim:
+        if has_anim: 
             anim_payload = dict(anim_data)
             anim_payload["active_keyframe_index"] = kf_idx
             anim_payload["active_keyframe_time"] = data.get("active_keyframe_time", 0.0)
@@ -135,9 +149,8 @@ class InspectorPanelView(BasePanel):
             self.animation_widget.setVisible(True)
         else:
             self.animation_widget.setVisible(False)
-            
+
         if has_tf: 
-            # Simplified update call: transform_widget now parses locked_axes directly from tf_data
             self.transform_widget.update_data(tf_data)
             self.transform_widget.setVisible(True)
         else:
@@ -163,10 +176,14 @@ class InspectorPanelView(BasePanel):
         else:
             self.camera_widget.setVisible(False)
 
-    def fast_update_transform(self, transform_tuple: tuple) -> None:
-        if not isinstance(transform_tuple, tuple) or len(transform_tuple) != 2: return
+    def fast_update_transform(self, transform_tuple: Tuple[str, Tuple[float, float, float]]) -> None:
+        """Rapidly pushes dragging changes from the Viewport directly into the SpinBoxes."""
+        if not isinstance(transform_tuple, tuple) or len(transform_tuple) != 2: 
+            return
+            
         mode, values = transform_tuple
         self.transform_widget.fast_update_single_axis(mode, values)
+        
         if mode == "ROTATE" and self.light_widget.isVisible():
             if hasattr(self.light_widget, 'fast_update_rotation'):
                 data = ctx.engine.get_selected_entity_data()

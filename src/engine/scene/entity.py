@@ -1,10 +1,18 @@
+"""
+Entity Component System (ECS) Core.
+
+Defines the fundamental building blocks of the 3D scene: 
+Entities (Node containers) and Components (Data/Logic payloads).
+"""
+
 import glm
 import copy
-from typing import List, Optional, Type, TypeVar, Any
+from typing import List, Optional, Type, TypeVar
 
 from src.app.config import DEFAULT_ENTITY_NAME
 
 T = TypeVar('T', bound='Component')
+
 
 class Component:
     """
@@ -13,6 +21,7 @@ class Component:
     """
     def __init__(self) -> None:
         self.entity: Optional['Entity'] = None 
+
 
 class Entity:
     """
@@ -52,6 +61,7 @@ class Entity:
         if not self.is_group:
             return 
         
+        # Local import to prevent circular dependencies at boot time
         from src.engine.scene.components import TransformComponent
         
         tf: Optional[TransformComponent] = None

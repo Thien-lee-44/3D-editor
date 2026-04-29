@@ -1,9 +1,21 @@
+"""
+Synthetic Data Generator.
+
+The core execution engine for generating large-scale synthetic datasets.
+Coordinates the Scene, Animator, and Renderers to output synchronized frames, 
+masks, and annotations (YOLO, COCO, VOC) over a continuous simulation timeline.
+Outputs data in a flat directory structure, leaving Train/Val/Test splits 
+to be handled dynamically by the CV Benchmark tool.
+"""
+
 import math
 import shutil
 import random
 import json
 from pathlib import Path
-from typing import Any, Callable, Optional, Dict, List, Tuple
+from typing import Any, Callable, Optional, Dict, List, Tuple, Union
+from datetime import datetime
+import os
 
 import glm
 import numpy as np
@@ -16,7 +28,13 @@ from src.engine.synthetic.exporters.coco_writer import COCOWriter
 from src.engine.synthetic.exporters.metadata_writer import MetadataWriter
 from src.engine.synthetic.exporters.voc_writer import VOCWriter
 
+
 class SyntheticDataGenerator:
+    """
+    Orchestrates the automated generation of photorealistic and ground-truth data.
+    Features integrated domain randomization for lighting and camera viewpoints.
+    """
+    
     def __init__(self, engine: Any) -> None:
         self.engine = engine
         self.scene = engine.scene
@@ -28,12 +46,14 @@ class SyntheticDataGenerator:
         self.output_dir: Path = Path.cwd() / "datasets" / "synthetic_output"
 
     def _get_active_camera(self) -> Tuple[Optional[CameraComponent], Optional[TransformComponent]]:
+        """Resolves the currently active camera used for dataset viewpoint rendering."""
         for tf, cam, ent in self.scene.cached_cameras:
             if getattr(cam, 'is_active', False):
                 return cam, tf
         return None, None
 
     def _get_class_name_lookup(self) -> Dict[int, str]:
+        """Builds a mapping of class IDs to human-readable names from the Semantic Manager."""
         classes: Dict[int, Any] = {}
         if hasattr(self.engine, 'get_semantic_classes'):
             try:
@@ -55,9 +75,8 @@ class SyntheticDataGenerator:
         return lookup
 
     def _write_dataset_yaml(self, class_lookup: Dict[int, str]) -> None:
-        self._write_single_dataset_yaml(self.output_dir / 'dataset.yaml', class_lookup)
-
-    def _write_single_dataset_yaml(self, yaml_path: Path, class_lookup: Dict[int, str]) -> None:
+        """Generates a flat YOLO-compatible dataset configuration file."""
+        yaml_path = self.output_dir / 'dataset.yaml'
         lines = [
             f"path: {self.output_dir.as_posix()}",
             "train: images",
@@ -74,6 +93,7 @@ class SyntheticDataGenerator:
             f.write("\n".join(lines) + "\n")
 
     def _write_export_manifest(self) -> None:
+        """Creates a JSON index of all generated data formats and their relative paths."""
         manifest_path = self.output_dir / "annotations" / "export_manifest.json"
         payload = {
             "dataset_root": self.output_dir.as_posix(),
@@ -85,8 +105,6 @@ class SyntheticDataGenerator:
                 "metadata_json": "metadata/frames.json",
                 "metadata_csv": "metadata/objects.csv",
                 "metadata_ndjson": "metadata/frames.ndjson",
-                "all_images_split": "splits/all_images.txt",
-                "all_labels_split": "splits/all_labels.txt",
                 "rgb": "images/*.jpg",
                 "depth_png": "depth/*.png",
                 "depth_npy": "depth/*.npy",
@@ -98,6 +116,7 @@ class SyntheticDataGenerator:
             json.dump(payload, f, ensure_ascii=False, indent=2)
 
     def _camera_payload(self, cam: CameraComponent, tf: Optional[TransformComponent]) -> Dict[str, Any]:
+        """Serializes camera state for metadata tracking."""
         if tf:
             pos = [float(tf.global_position.x), float(tf.global_position.y), float(tf.global_position.z)]
             rot = [float(tf.global_quat_rot.w), float(tf.global_quat_rot.x), float(tf.global_quat_rot.y), float(tf.global_quat_rot.z)]
@@ -116,8 +135,11 @@ class SyntheticDataGenerator:
         }
 
     def _extract_accurate_bboxes(self, inst_pixels: bytes, w: int, h: int, class_lookup: Dict[int, str]) -> List[Dict[str, Any]]:
+        """
+        Processes raw pixel masks to generate coordinate-accurate bounding boxes.
+        Automatically corrects OpenGL's inverted Y-axis.
+        """
         bboxes_raw = LabelUtils.extract_bboxes_from_mask(inst_pixels, w, h)
-        
         objects_payload = []
         processed_tracks = set()
         
@@ -139,6 +161,7 @@ class SyntheticDataGenerator:
                     box_data = bboxes_raw[track_id]
                     xmin, ymin, xmax, ymax = box_data["bbox"]
                     
+                    # Flip Y axis from OpenGL (bottom-left) to Image (top-left) standard
                     corrected_ymin = h - ymax
                     corrected_ymax = h - ymin
                     
@@ -156,14 +179,8 @@ class SyntheticDataGenerator:
                     
         return objects_payload
 
-    def extract_preview_frame(
-        self,
-        w: int,
-        h: int,
-        mode: str,
-        is_playing: bool,
-        show_bbox: bool = True,
-    ) -> Dict[str, Any]:
+    def extract_preview_frame(self, w: int, h: int, mode: str, is_playing: bool, show_bbox: bool = True) -> Dict[str, Any]:
+        """Renders a single frame targeted for the UI Preview Viewport without saving to disk."""
         cam, tf = self._get_active_camera()
         if not cam or not self.synthetic_renderer:
             return {}
@@ -205,44 +222,31 @@ class SyntheticDataGenerator:
         payload["stats"]["num_objects"] = len(payload["objects"])
         return payload
 
-    def setup_directories(self, base_dir: Optional[str] = None) -> None:
-        if base_dir:
-            self.output_dir = Path(base_dir)
+    def setup_directories(self, target_dir: Optional[Union[str, Path]] = None) -> None:
+        """Creates a flat directory structure for dataset outputs."""
+        if target_dir:
+            self.output_dir = Path(target_dir)
+        else:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            self.output_dir = Path(os.getcwd()) / "datasets" / f"synth_data_{timestamp}"
             
         if self.output_dir.exists():
-            shutil.rmtree(self.output_dir, ignore_errors=True)
+            shutil.rmtree(self.output_dir)
             
         self.output_dir.mkdir(parents=True, exist_ok=True)
-        (self.output_dir / "images").mkdir(exist_ok=True)
-        (self.output_dir / "depth").mkdir(exist_ok=True)
-        (self.output_dir / "masks").mkdir(exist_ok=True)
-        (self.output_dir / "masks" / "instance").mkdir(parents=True, exist_ok=True)
-        (self.output_dir / "masks" / "semantic").mkdir(parents=True, exist_ok=True)
-        (self.output_dir / "labels").mkdir(exist_ok=True)
-        (self.output_dir / "labels_seg").mkdir(exist_ok=True)
-        (self.output_dir / "annotations").mkdir(exist_ok=True)
-        (self.output_dir / "annotations" / "voc").mkdir(parents=True, exist_ok=True)
-        (self.output_dir / "metadata").mkdir(exist_ok=True)
-        (self.output_dir / "splits").mkdir(exist_ok=True)
+        
+        for d in ["images", "labels", "labels_seg", "depth", "masks/instance", "masks/semantic", "annotations/voc"]:
+            (self.output_dir / d).mkdir(parents=True, exist_ok=True)
+                
+        (self.output_dir / "metadata").mkdir(parents=True, exist_ok=True)
+        (self.output_dir / "annotations").mkdir(parents=True, exist_ok=True)
 
-    def _write_split_indices(self) -> None:
-        images = sorted((self.output_dir / "images").glob("*.jpg"))
-        labels = sorted((self.output_dir / "labels").glob("*.txt"))
-
-        all_images_txt = self.output_dir / "splits" / "all_images.txt"
-        all_labels_txt = self.output_dir / "splits" / "all_labels.txt"
-
-        with open(all_images_txt, "w", encoding="utf-8") as f:
-            for image_path in images:
-                rel = image_path.relative_to(self.output_dir).as_posix()
-                f.write(rel + "\n")
-
-        with open(all_labels_txt, "w", encoding="utf-8") as f:
-            for label_path in labels:
-                rel = label_path.relative_to(self.output_dir).as_posix()
-                f.write(rel + "\n")
-
-    def generate_batch(self, num_frames: int, dt: float, res_w: int, res_h: int, use_rand_light: bool, use_rand_cam: bool, progress_cb: Callable, preview_stride: int) -> None:
+    def generate_batch(self, num_frames: int, dt: float, res_w: int, res_h: int, use_rand_light: bool, use_rand_cam: bool, progress_cb: Optional[Callable] = None, preview_stride: int = 1) -> None:
+        """
+        The Main Dataset Generation Loop.
+        Iterates over the timeline, evaluates animations, applies domain randomization,
+        triggers the rendering pipeline, and flushes data to flat folders.
+        """
         self.is_running = True
         
         cam, cam_tf = self._get_active_camera()
@@ -262,6 +266,7 @@ class SyntheticDataGenerator:
 
         sim_time = 0.0
 
+        # Cache baseline lighting states for accurate domain randomization
         clean_lights = []
         for l_tf, l_comp, _ in self.scene.cached_lights:
             if getattr(l_comp, 'type', '') == "Directional":
@@ -284,6 +289,7 @@ class SyntheticDataGenerator:
                 clean_cam_rot = glm.vec3(cam_tf.rotation) if cam_tf else None
                 bg_color = (0.0, 0.0, 0.0)
 
+                # Apply Camera Domain Randomization
                 if use_rand_cam and cam_tf and clean_cam_rot is not None:
                     cam_tf.rotation = clean_cam_rot + glm.vec3(
                         random.uniform(-5.0, 5.0), 
@@ -293,6 +299,7 @@ class SyntheticDataGenerator:
                     cam_tf.quat_rot = glm.quat(glm.radians(cam_tf.rotation))
                     cam_tf.is_dirty = True
 
+                # Apply Lighting Domain Randomization (Simulated Day-Night Cycle)
                 if use_rand_light:
                     time_of_day = random.uniform(6.0, 18.0)
                     t_norm = (time_of_day - 6.0) / 12.0
@@ -318,7 +325,6 @@ class SyntheticDataGenerator:
                         sky_color_dawn.z * (1.0 - factor) + sky_color_noon.z * factor
                     )
                     bg_color = (sky_color.x, sky_color.y, sky_color.z)
-                    
                     intensity = 0.4 + 0.8 * factor
 
                     for l_data in clean_lights:
@@ -333,18 +339,11 @@ class SyntheticDataGenerator:
                         l_comp.intensity = intensity
 
                 capture_modes = ['RGB', 'DEPTH', 'INSTANCE', 'SEMANTIC']
-                if frame_idx % max(1, preview_stride) == 0:
-                    capture_modes.append('INSTANCE_PREVIEW')
-
                 mode_frames = self.synthetic_renderer.capture_fbo_frames(
-                    self.scene,
-                    res_w,
-                    res_h,
-                    capture_modes,
-                    download=True,
-                    bg_color=bg_color
+                    self.scene, res_w, res_h, capture_modes, download=True, bg_color=bg_color
                 )
                 
+                # Restore states after capture
                 if use_rand_cam and cam_tf and clean_cam_rot is not None:
                     cam_tf.rotation = clean_cam_rot
                     cam_tf.quat_rot = glm.quat(glm.radians(cam_tf.rotation))
@@ -369,6 +368,9 @@ class SyntheticDataGenerator:
 
                 objects_payload = self._extract_accurate_bboxes(inst_pixels, res_w, res_h, class_lookup)
 
+                # =========================================================
+                # FLAT DIRECTORY EXPORT
+                # =========================================================
                 frame_name = f"frame_{frame_idx:06d}"
                 rel_rgb = f"images/{frame_name}.jpg"
                 rel_depth = f"depth/{frame_name}.png"
@@ -379,13 +381,14 @@ class SyntheticDataGenerator:
                 rel_label_seg = f"labels_seg/{frame_name}.txt"
                 rel_voc = f"annotations/voc/{frame_name}.xml"
 
+                # Disk I/O Serialization
                 ImageWriter.save_rgb(str(self.output_dir / rel_rgb), rgb_pixels, res_w, res_h)
                 ImageWriter.save_mask(str(self.output_dir / rel_mask_instance), inst_pixels, res_w, res_h)
                 ImageWriter.save_mask(str(self.output_dir / rel_mask_semantic), sem_pixels, res_w, res_h)
 
                 depth_arr = np.frombuffer(depth_pixels, dtype=np.uint8)
                 ImageWriter.save_depth(str(self.output_dir / rel_depth), depth_arr, res_w, res_h, near=0.0, far=255.0)
-                np.save(str(self.output_dir / rel_depth_npy), depth_arr.reshape((res_h, res_w)))
+                ImageWriter.save_depth_npy(str(self.output_dir / rel_depth_npy), depth_arr, res_w, res_h)
 
                 YOLOWriter.export(str(self.output_dir / rel_label), objects_payload, res_w, res_h, is_segmentation=False)
                 YOLOWriter.export(str(self.output_dir / rel_label_seg), objects_payload, res_w, res_h, is_segmentation=True)
@@ -407,9 +410,7 @@ class SyntheticDataGenerator:
                     },
                     'camera': self._camera_payload(cam, cam_tf),
                     'objects': objects_payload,
-                    'stats': {
-                        'num_objects': len(objects_payload)
-                    },
+                    'stats': {'num_objects': len(objects_payload)},
                 }
                 metadata_writer.add_frame(frame_record)
 
@@ -422,7 +423,7 @@ class SyntheticDataGenerator:
                         'modes': {
                             'RGB': rgb_pixels,
                             'DEPTH': depth_pixels,
-                            'INSTANCE': mode_frames.get('INSTANCE_PREVIEW', b''),
+                            'INSTANCE': inst_pixels,
                             'SEMANTIC': sem_pixels
                         },
                         'mode': 'RGB',
@@ -439,6 +440,5 @@ class SyntheticDataGenerator:
             coco_writer.flush()
             metadata_writer.flush()
             self._write_dataset_yaml(class_lookup)
-            self._write_split_indices()
             self._write_export_manifest()
             self.is_running = False

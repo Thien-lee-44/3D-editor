@@ -1,3 +1,10 @@
+"""
+Hierarchy Manager.
+
+Manages entity relationships, parent-child structures, and grouping operations.
+Ensures global transforms remain visually stable during reparenting.
+"""
+
 import glm
 from typing import List, Dict, Optional, Any
 
@@ -6,16 +13,19 @@ from src.engine.scene.components import TransformComponent
 from src.engine.scene.components.animation_cmp import AnimationComponent
 from src.engine.scene.components.semantic_cmp import SemanticComponent
 
+
 class HierarchyManager:
     """
-    Manages entity relationships, parent-child structures, and grouping operations.
-    Ensures global transforms remain visually stable during reparenting.
+    Coordinates modifications to the Scene Graph tree structure.
+    Handles grouping, ungrouping, and synchronizing with the UI.
     """
+    
     def __init__(self, scene: Any, scene_mgr: Any) -> None:
         self.scene = scene
         self.scene_mgr = scene_mgr
 
     def _invalidate_animation(self, entity: Entity) -> None:
+        """Flushes animation keyframes when an entity undergoes structural hierarchy changes."""
         anim = entity.get_component(AnimationComponent)
         if anim:
             anim.keyframes.clear()
@@ -33,6 +43,7 @@ class HierarchyManager:
         if not top_level_ents: 
             return
 
+        # Calculate geometric centroid for the group pivot
         centroid = glm.vec3(0.0)
         count = 0
         for ent in top_level_ents:
@@ -45,11 +56,13 @@ class HierarchyManager:
         if count > 0:
             centroid /= count
 
+        # Construct Group Entity
         group_ent = Entity("Group", is_group=True)
         group_tf = group_ent.add_component(TransformComponent())
         group_tf.position = centroid
         
         group_ent.add_component(AnimationComponent())
+        # Default assignment to 'Misc' class
         group_ent.add_component(SemanticComponent(class_id=3))
         
         common_parent = top_level_ents[0].parent
@@ -67,7 +80,7 @@ class HierarchyManager:
         self.scene.selected_index = self.scene.entities.index(group_ent)
 
     def ungroup_selected_entity(self) -> None:
-        """Dissolves a group entity and elevates its children to its parent level."""
+        """Dissolves a group entity and elevates its children to its parent's level."""
         idx = self.scene.selected_index
         if idx < 0 or idx >= len(self.scene.entities): 
             return
@@ -88,7 +101,7 @@ class HierarchyManager:
         self.scene.remove_entity(idx)
 
     def sync_hierarchy_from_ui(self, hierarchy_mapping: Dict[int, Optional[int]]) -> None:
-        """Synchronizes the backend entity tree with user interactions from the UI TreeView."""
+        """Synchronizes the backend entity tree with drag-and-drop actions from the UI."""
         for child_id, parent_id in hierarchy_mapping.items():
             if child_id >= len(self.scene.entities):
                 continue

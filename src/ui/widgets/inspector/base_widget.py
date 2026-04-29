@@ -1,4 +1,11 @@
-from typing import Any, List, Optional
+"""
+Base Component Widget.
+
+Provides the foundational UI class and shared utilities for all modular panels 
+within the Inspector. Includes an accordion-style collapsible layout.
+"""
+
+from typing import Any, List, Optional, Tuple
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, 
                                QColorDialog, QFrame)
 from PySide6.QtGui import QColor
@@ -10,6 +17,7 @@ from src.app.config import (
     STYLE_COLOR_BTN_DARK_TEXT, STYLE_COLOR_BTN_LIGHT_TEXT
 )
 
+
 def rgb_to_hex(c_list: List[float]) -> str:
     """Converts a normalized RGB float array to a styled CSS string based on relative luminance."""
     r = max(0, min(255, int(c_list[0] * 255)))
@@ -20,6 +28,7 @@ def rgb_to_hex(c_list: List[float]) -> str:
     base_style = STYLE_COLOR_BTN_DARK_TEXT if lum > 128 else STYLE_COLOR_BTN_LIGHT_TEXT
     
     return f"background-color: rgb({r},{g},{b}); {base_style}"
+
 
 def set_vec3_spinboxes(spinboxes: List[Any], values: List[float]) -> None:
     """Silently updates a list of spinboxes without triggering their 'valueChanged' signals."""
@@ -35,6 +44,7 @@ class BaseComponentWidget(QWidget):
     Implements a collapsible accordion architecture to optimize vertical screen space.
     Subclasses seamlessly inject their specific forms into the internal 'self.layout'.
     """
+    
     def __init__(self, title: str, controller: Any) -> None:
         super().__init__()
         self._controller = controller
@@ -98,7 +108,7 @@ class BaseComponentWidget(QWidget):
         if self._controller and hasattr(self._controller, 'request_undo_snapshot'):
             self._controller.request_undo_snapshot()
 
-    def _build_color_row(self, c_type: str, vec_callback: Any, btn_callback: Any) -> tuple:
+    def _build_color_row(self, c_type: str, vec_callback: Any, btn_callback: Any) -> Tuple[QHBoxLayout, QPushButton, List[Any]]:
         """Assembles a standardized row containing a Color Dialog Button paired with explicit RGB spinboxes."""
         row = QHBoxLayout()
         row.setContentsMargins(0, 0, 0, 0)

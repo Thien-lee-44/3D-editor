@@ -1,22 +1,31 @@
+"""
+Animation Component.
+
+Provides a timeline-based animation system for entities, allowing state interpolation 
+across discrete keyframes.
+"""
+
 import glm
 import copy
 from typing import List, Dict, Any, Optional
 
+
 class Keyframe:
     """
-    Represents a discrete snapshot of an entity's state at a specific point in time.
-    State bag is populated via Component native to_dict() serialization.
+    Represents a discrete snapshot of an entity's component states at a specific timestamp.
     """
     def __init__(self, time: float) -> None:
         self.time: float = time
         self.state: Dict[str, Dict[str, Any]] = {}
 
     def clone(self) -> 'Keyframe':
+        """Creates a deep copy of the keyframe and its state data."""
         new_kf = Keyframe(self.time)
         new_kf.state = copy.deepcopy(self.state)
         return new_kf
 
     def serialize(self) -> Dict[str, Any]:
+        """Serializes the keyframe into a standard dictionary format."""
         return {
             "time": self.time, 
             "state": copy.deepcopy(self.state)
@@ -24,6 +33,7 @@ class Keyframe:
 
     @staticmethod
     def deserialize(data: Dict[str, Any]) -> 'Keyframe':
+        """Reconstructs a Keyframe instance from a data dictionary."""
         kf = Keyframe(data.get("time", 0.0))
         kf.state = copy.deepcopy(data.get("state", {}))
         return kf
@@ -31,8 +41,8 @@ class Keyframe:
 
 class AnimationComponent:
     """
-    Stores keyframe tracks and kinematic properties for dynamic entities.
-    Acts as the central timeline for entity-specific state changes over time.
+    Acts as the central timeline for entity-specific state changes.
+    Manages keyframe tracks, duration, and kinematic properties.
     """
     def __init__(self) -> None:
         self.is_active: bool = True
@@ -46,26 +56,31 @@ class AnimationComponent:
         self.angular_velocity: glm.vec3 = glm.vec3(0.0)
 
     def add_keyframe(self, keyframe: Keyframe) -> None:
+        """Appends a new keyframe and re-evaluates the timeline duration."""
         self.keyframes.append(keyframe)
         self._sort_and_update_duration()
 
     def remove_keyframe(self, index: int) -> None:
+        """Removes a keyframe by index and updates timeline boundaries."""
         if 0 <= index < len(self.keyframes):
             self.keyframes.pop(index)
             self.active_keyframe_index = -1 if not self.keyframes else 0
             self._sort_and_update_duration()
 
     def get_keyframe(self, index: int) -> Optional[Keyframe]:
+        """Retrieves a specific keyframe by its list index."""
         if 0 <= index < len(self.keyframes):
             return self.keyframes[index]
         return None
 
     def set_keyframe_time(self, index: int, new_time: float) -> None:
+        """Modifies the timestamp of an existing keyframe."""
         if 0 <= index < len(self.keyframes):
             self.keyframes[index].time = new_time
             self._sort_and_update_duration()
 
     def _sort_and_update_duration(self) -> None:
+        """Sorts keyframes chronologically and updates total animation duration."""
         if not self.keyframes:
             self.duration = 0.0
             return
@@ -81,6 +96,7 @@ class AnimationComponent:
             self.active_keyframe_index = self.keyframes.index(active_kf)
 
     def serialize(self) -> Dict[str, Any]:
+        """Packages animation tracks and kinematics into a JSON-serializable dictionary."""
         return {
             "is_active": self.is_active,
             "current_time": self.current_time,
@@ -91,6 +107,7 @@ class AnimationComponent:
         }
 
     def deserialize(self, data: Dict[str, Any]) -> None:
+        """Reconstructs the timeline component state from JSON data."""
         self.is_active = data.get("is_active", True)
         self.current_time = data.get("current_time", 0.0)
         self.loop = data.get("loop", False)
@@ -99,6 +116,7 @@ class AnimationComponent:
         kf_data = data.get("keyframes", [])
         if kf_data:
             self.keyframes = [Keyframe.deserialize(k) for k in kf_data]
+            # Backward compatibility parser for legacy camera parameters
             for kf in self.keyframes:
                 cam_state = kf.state.get("Camera")
                 if isinstance(cam_state, dict):

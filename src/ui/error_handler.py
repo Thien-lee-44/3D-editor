@@ -1,5 +1,6 @@
 """
 Centralized UI Error Handler.
+
 Captures exceptions from any layer or thread and safely routes them 
 to the main UI thread via Qt Signals to display a QMessageBox.
 """
@@ -14,11 +15,13 @@ from PySide6.QtWidgets import QMessageBox, QApplication
 # IMPORT: Domain Exceptions to filter expected vs unexpected errors
 from src.app.exceptions import EngineError
 
+
 class ErrorDispatcher(QObject):
     """
     Thread-safe error dispatcher. 
     Listens for errors and triggers UI popups exclusively on the main thread.
     """
+    
     # Signal signature: (context_title, error_message)
     error_occurred = Signal(str, str)
 
@@ -38,15 +41,15 @@ class ErrorDispatcher(QObject):
             logging.warning(f"[{context}] Engine Constraint Violated: {exception}")
         else:
             # Unexpected Python runtime crash (e.g., TypeError, KeyError)
-            # Log full stack trace for developer debugging
-            logging.error(f"[{context}] Unexpected System Crash: {exception}", exc_info=True)
-            
-        # Always trigger the UI popup for the user
+            # Log full stack trace for debugging
+            logging.error(f"[{context}] Unexpected Exception: {exception}", exc_info=True)
+
+        # Safely emit signal to cross thread boundaries if necessary
         self.error_occurred.emit(context, str(exception))
 
     def _show_error_dialog(self, title: str, message: str) -> None:
         """
-        Displays the actual popup dialog.
+        Slot executed to display the actual popup dialog.
         Strictly executed on the main UI thread managed by Qt's event loop.
         """
         if not QApplication.instance():
@@ -59,14 +62,17 @@ class ErrorDispatcher(QObject):
         dialog.setInformativeText(message)
         dialog.exec()
 
+
 # Global singleton instance, strictly initialized AFTER QApplication
 global_error_handler: Optional[ErrorDispatcher] = None
+
 
 def init_global_error_handler() -> None:
     """Instantiates the dispatcher once the Qt Environment is ready."""
     global global_error_handler
     if global_error_handler is None:
         global_error_handler = ErrorDispatcher()
+
 
 def safe_execute(context: str = "Execution Error") -> Callable:
     """

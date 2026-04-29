@@ -1,5 +1,14 @@
+"""
+Scene Manager.
+
+High-level central controller dictating complex scene operations. 
+Strictly follows the Facade and Single Responsibility Principles.
+Acts exclusively as a Router to specialized Sub-Managers.
+"""
+
 import os
 import glm
+import math
 from typing import Dict, List, Any, Optional, Tuple
 
 from src.engine.resources.resource_manager import ResourceManager
@@ -14,11 +23,11 @@ from src.engine.scene.managers.clipboard_manager import ClipboardManager
 from src.engine.scene.managers.animation_manager import AnimationBackendManager
 from src.engine.scene.managers.semantic_manager import SemanticManager
 
+
 class SceneManager:
     """
-    High-level central controller dictating complex scene operations. 
-    Strictly follows the Facade and Single Responsibility Principles.
-    Acts exclusively as a Router to specialized Sub-Managers.
+    Facade exposing unified commands for the UI layer to mutate the Scene Graph.
+    Delegates internal logic to Clipboard, Hierarchy, Semantic, and Serialization sub-managers.
     """
     
     _COMPONENT_MAP = {
@@ -39,6 +48,7 @@ class SceneManager:
         self.semantic = SemanticManager(self.scene)
 
     def _add_entity_recursive(self, ent: Entity) -> None:
+        """Recursively registers an entity and its hierarchy into the scene."""
         self.scene.add_entity(ent)
         for child in ent.children:
             self._add_entity_recursive(child)
@@ -65,17 +75,14 @@ class SceneManager:
         if index < 0 or index >= len(self.scene.entities): return
         tf = self.scene.entities[index].get_component(TransformComponent)
         if tf:
-            if not tf.locked_axes.get("pos", False):
-                tf.position = glm.vec3(0.0)
-            if not tf.locked_axes.get("rot", False):
+            if not tf.locked_axes.get("pos", False): tf.position = glm.vec3(0.0)
+            if not tf.locked_axes.get("rot", False): 
                 tf.rotation = glm.vec3(0.0)
                 tf.quat_rot = glm.quat(glm.vec3(0.0))
-            if not tf.locked_axes.get("scl", False):
-                tf.scale = glm.vec3(1.0)
+            if not tf.locked_axes.get("scl", False): tf.scale = glm.vec3(1.0)
                 
             tf.is_dirty = True
-            if hasattr(tf, 'sync_from_gui'):
-                tf.sync_from_gui()
+            if hasattr(tf, 'sync_from_gui'): tf.sync_from_gui()
 
     def update_light_direction(self, yaw: float, pitch: float) -> None:
         if self.scene.selected_index < 0: return
@@ -85,16 +92,13 @@ class SceneManager:
                          glm.angleAxis(glm.radians(pitch), glm.vec3(1, 0, 0))
             if tf.entity and tf.entity.parent:
                 parent_tf = tf.entity.parent.get_component(TransformComponent)
-                if parent_tf:
-                    tf.quat_rot = glm.inverse(parent_tf.global_quat_rot) * world_quat
-                else:
-                    tf.quat_rot = world_quat
+                tf.quat_rot = glm.inverse(parent_tf.global_quat_rot) * world_quat if parent_tf else world_quat
             else:
                 tf.quat_rot = world_quat
+                
             tf.rotation = glm.degrees(glm.eulerAngles(tf.quat_rot))
             tf.is_dirty = True
-            if hasattr(tf, 'sync_from_gui'):
-                tf.sync_from_gui()
+            if hasattr(tf, 'sync_from_gui'): tf.sync_from_gui()
 
     def set_active_camera_selected(self) -> None:
         if self.scene.selected_index < 0: return
@@ -146,7 +150,6 @@ class SceneManager:
                 elif hasattr(comp, 'serialize'): data[dict_key] = comp.serialize()
 
         if data["light"] and data["tf"] and data["light"].get("type") in ["Directional", "Spot"]:
-            import math
             tf = ent.get_component(TransformComponent)
             forward = glm.vec3(glm.mat4_cast(tf.global_quat_rot) * glm.vec4(0, 0, -1, 0))
             data["light"]["pitch"] = math.degrees(math.asin(max(-1.0, min(1.0, forward.y))))
@@ -280,6 +283,7 @@ class SceneManager:
             if self._check_texture_usage(child, path): return True
         return False
 
+    # Facade Delegations
     def get_scene_snapshot(self) -> str: return self.serializer.get_scene_snapshot()
     def restore_snapshot(self, snapshot_str: str, current_aspect: float) -> None: self.serializer.restore_snapshot(snapshot_str, current_aspect)
     def save_project(self, file_path: str, metadata: Dict[str, Any]) -> None: self.serializer.save_project(file_path, metadata)

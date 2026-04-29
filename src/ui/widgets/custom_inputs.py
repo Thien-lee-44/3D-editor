@@ -1,9 +1,17 @@
+"""
+Custom Input Widgets.
+
+Provides specialized Qt input controls like tracked spinboxes and composite 
+slider-spinboxes designed to integrate safely with the Undo/Redo history system.
+"""
+
 from PySide6.QtWidgets import QWidget, QHBoxLayout, QLabel, QDoubleSpinBox, QSlider
 from PySide6.QtCore import Qt, Signal
 from typing import Callable, Optional, Tuple, List, Any
 from PySide6.QtGui import QFocusEvent, QMouseEvent, QKeyEvent
 
 from src.app.config import GLOBAL_NUMERIC_MIN, GLOBAL_NUMERIC_MAX
+
 
 class TrackedSpinBox(QDoubleSpinBox):
     """
@@ -20,24 +28,26 @@ class TrackedSpinBox(QDoubleSpinBox):
         self._has_emitted: bool = False
 
     def focusInEvent(self, event: QFocusEvent) -> None:
-        # Trigger snapshot when the user tabs into or clicks the input field
+        """Triggers a snapshot when the user tabs into or clicks the input field."""
         if not self._has_emitted:
             self.editingStarted.emit()
             self._has_emitted = True
         super().focusInEvent(event)
 
     def focusOutEvent(self, event: QFocusEvent) -> None:
-        # Reset the emission flag when the user finishes editing
+        """Resets the emission flag when the user finishes editing."""
         self._has_emitted = False
         super().focusOutEvent(event)
         
     def mousePressEvent(self, event: QMouseEvent) -> None:
+        """Ensures snapshot emission if the field is clicked without prior focus."""
         if not self.hasFocus() and not self._has_emitted:
             self.editingStarted.emit()
             self._has_emitted = True
         super().mousePressEvent(event)
         
     def keyPressEvent(self, event: QKeyEvent) -> None:
+        """Ensures snapshot emission upon initial keystrokes."""
         if not self._has_emitted:
             self.editingStarted.emit()
             self._has_emitted = True
@@ -97,6 +107,7 @@ class SliderSpinBox(QWidget):
             self.callback()
         
     def value(self) -> float: 
+        """Returns the current floating-point value from the spinbox."""
         return self.spin.value()
     
     def setValue(self, val: float) -> None:

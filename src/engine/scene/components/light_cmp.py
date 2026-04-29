@@ -1,9 +1,14 @@
+"""
+Light Component.
+
+Provides physical illumination parameters mapped directly to the GLSL Forward Renderer.
+"""
+
 import glm
 import math
 from typing import Dict, Any
-from src.engine.scene.entity import Component
 
-# Import centralized configurations
+from src.engine.scene.entity import Component
 from src.app.config import (
     DEFAULT_LIGHT_COLOR, DEFAULT_LIGHT_INTENSITY, 
     DEFAULT_LIGHT_AMBIENT, DEFAULT_LIGHT_DIFFUSE, DEFAULT_LIGHT_SPECULAR,
@@ -11,10 +16,11 @@ from src.app.config import (
     DEFAULT_SPOT_INNER_ANGLE, DEFAULT_SPOT_OUTER_ANGLE
 )
 
+
 class LightComponent(Component):
     """
-    Provides physical illumination parameters mapped directly to the GLSL Forward Renderer.
-    Contains mathematical abstractions like Cutoff angles for Spotlights.
+    Defines Directional, Point, or Spot light properties for the graphics engine.
+    Pre-calculates optimization variables (like cosines) for shader injection.
     """
     
     def __init__(self, light_type: str = "Point") -> None:
@@ -24,7 +30,7 @@ class LightComponent(Component):
         self.intensity: float = DEFAULT_LIGHT_INTENSITY         
         self.use_advanced_mode: bool = False 
         
-        # Basic mode properties (Scalar multipliers against a base color)
+        # Basic mode properties (Scalar multipliers against base color)
         self.color = glm.vec3(*DEFAULT_LIGHT_COLOR)
         self.ambient_strength: float = DEFAULT_LIGHT_AMBIENT
         self.diffuse_strength: float = DEFAULT_LIGHT_DIFFUSE
@@ -35,7 +41,7 @@ class LightComponent(Component):
         self.explicit_diffuse = glm.vec3(*DEFAULT_LIGHT_COLOR)
         self.explicit_specular = glm.vec3(*DEFAULT_LIGHT_COLOR)
         
-        # Pre-calculated cosine values for Spotlight cones to avoid calculating acos() in the shader
+        # Pre-calculated cosine values for Spotlight cones
         self.cutOff: float = math.cos(math.radians(DEFAULT_SPOT_INNER_ANGLE))
         self.outerCutOff: float = math.cos(math.radians(DEFAULT_SPOT_OUTER_ANGLE))
         
@@ -45,30 +51,27 @@ class LightComponent(Component):
                 
     @property
     def ambient(self) -> glm.vec3:
-        """Evaluates final ambient color taking into account the global intensity scalar."""
-        if not self.on: 
-            return glm.vec3(0)
+        """Evaluates final ambient color against the intensity scalar."""
+        if not self.on: return glm.vec3(0)
         base = self.explicit_ambient if self.use_advanced_mode else (self.color * self.ambient_strength)
         return base * self.intensity
                 
     @property
     def diffuse(self) -> glm.vec3:
         """Evaluates final diffuse scattering color."""
-        if not self.on: 
-            return glm.vec3(0)
+        if not self.on: return glm.vec3(0)
         base = self.explicit_diffuse if self.use_advanced_mode else (self.color * self.diffuse_strength)
         return base * self.intensity
                 
     @property
     def specular(self) -> glm.vec3:
         """Evaluates final specular highlight color."""
-        if not self.on: 
-            return glm.vec3(0)
+        if not self.on: return glm.vec3(0)
         base = self.explicit_specular if self.use_advanced_mode else (self.color * self.specular_strength)
         return base * self.intensity
 
     def to_dict(self) -> Dict[str, Any]:
-        """Strict JSON mapping. Keys match exact variable names."""
+        """Serializes illumination variables for project saving."""
         return {
             "type": self.type, 
             "on": self.on, 
@@ -89,10 +92,12 @@ class LightComponent(Component):
         }
 
     def from_dict(self, data: Dict[str, Any]) -> None:
+        """Deserializes configuration from saved state."""
         self.type = data.get("type", "Point")
         self.on = bool(data.get("on", True))
         self.intensity = float(data.get("intensity", DEFAULT_LIGHT_INTENSITY))
         self.use_advanced_mode = bool(data.get("use_advanced_mode", False))
+        
         self.ambient_strength = float(data.get("ambient_strength", DEFAULT_LIGHT_AMBIENT))
         self.diffuse_strength = float(data.get("diffuse_strength", DEFAULT_LIGHT_DIFFUSE))
         self.specular_strength = float(data.get("specular_strength", DEFAULT_LIGHT_SPECULAR))

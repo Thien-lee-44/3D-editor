@@ -1,3 +1,10 @@
+"""
+Sun HUD Widget.
+
+Provides a miniature 3D OpenGL viewport dedicated to controlling the 
+orientation of the Directional Light in the scene.
+"""
+
 from PySide6.QtOpenGLWidgets import QOpenGLWidget
 from PySide6.QtWidgets import QWidget
 from PySide6.QtCore import Qt, QTimer
@@ -8,12 +15,14 @@ from src.app import ctx, AppEvent
 from src.ui.controllers.viewport_ctrl import ViewportController
 from src.app.config import SUN_HUD_MIN_HEIGHT, TARGET_FPS
 
+
 class SunHUDWidget(QOpenGLWidget):
     """
     Miniature 3D viewport dedicated to controlling the Directional Light orientation.
     Operates completely independently of the main viewport, utilizing its own EventBus 
     and a dedicated ViewportController instantiated in 'HUD mode'.
     """
+    
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         
@@ -28,9 +37,11 @@ class SunHUDWidget(QOpenGLWidget):
         self.timer.start(hud_interval)
 
     def initializeGL(self) -> None:
+        """Bootstraps the HUD OpenGL context via the Engine."""
         ctx.engine.init_hud_gl()
 
     def paintGL(self) -> None:
+        """Renders the interactive compass interface to control the light direction."""
         ctx.engine.render_sun_hud(
             self.width(), 
             self.height(), 
@@ -39,6 +50,7 @@ class SunHUDWidget(QOpenGLWidget):
         )
 
     def mousePressEvent(self, e: QMouseEvent) -> None: 
+        """Delegates mouse press interactions (axis selection) to the HUD controller."""
         self.makeCurrent()
         self._controller.process_press(
             e.position().x(), 
@@ -50,11 +62,13 @@ class SunHUDWidget(QOpenGLWidget):
         self.doneCurrent()
         
     def mouseReleaseEvent(self, e: QMouseEvent) -> None: 
+        """Releases the dragging state of the selected axis."""
         self.makeCurrent()
         self._controller.process_release(e.button())
         self.doneCurrent()
         
     def mouseMoveEvent(self, e: QMouseEvent) -> None: 
+        """Delegates mouse drag motions and syncs the rotation changes to the timeline."""
         self.makeCurrent()
         self._controller.process_move(
             e.position().x(), 
@@ -82,7 +96,6 @@ class SunHUDWidget(QOpenGLWidget):
                 
             ctx.events.emit(AppEvent.SCENE_CHANGED)
             
-            # CRITICAL FIX: Force inspector to refresh its UI sliders to match the new SunHUD live values
             ctx.events.emit(AppEvent.COMPONENT_PROPERTY_CHANGED)
             
         self.doneCurrent()

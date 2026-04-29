@@ -1,14 +1,24 @@
+"""
+Project Browser Dialog.
+
+Provides a popup interface for users to select, open, and delete 
+saved project files from the configured workspace directory.
+"""
+
 import os
 from typing import Any, Optional
-from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QListWidget, QPushButton, QMessageBox
+from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
+                               QListWidget, QPushButton, QMessageBox)
 
 from src.app.config import PROJECT_MANAGER_TITLE, PROJECT_MANAGER_MIN_SIZE
+
 
 class ProjectBrowserDialog(QDialog):
     """
     Popup dialog interface for selecting and managing saved projects.
     Handles scanning the project directory and dispatching user choices.
     """
+    
     def __init__(self, parent: Any, proj_dir: str) -> None:
         super().__init__(parent)
         self.setWindowTitle(PROJECT_MANAGER_TITLE)
@@ -33,16 +43,17 @@ class ProjectBrowserDialog(QDialog):
         btn_layout.addWidget(self.btn_open)
         btn_layout.addWidget(self.btn_del)
         btn_layout.addWidget(self.btn_cancel)
+        
         layout.addLayout(btn_layout)
         
-        # Binding UI logic
+        # Bind events
         self.btn_open.clicked.connect(self.on_open)
         self.btn_del.clicked.connect(self.on_delete)
         self.btn_cancel.clicked.connect(self.reject)
         self.list_widget.itemDoubleClicked.connect(self.on_open)
 
     def refresh_list(self) -> None:
-        """Scans the local projects directory and populates the UI list."""
+        """Scans the project directory and populates the UI list with .json project files."""
         self.list_widget.clear()
         if os.path.exists(self.proj_dir):
             for f in os.listdir(self.proj_dir):

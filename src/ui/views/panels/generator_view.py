@@ -10,8 +10,8 @@ class GeneratorPanelView(QWidget):
     def __init__(self, controller: Any) -> None:
         super().__init__()
         self._controller = controller
-        self._ui_locked = False
-        self._preview_playing = False
+        self._ui_locked: bool = False
+        self._preview_playing: bool = False
         self.setMinimumWidth(320)
         self.setMaximumWidth(350)
         self.setup_ui()
@@ -73,7 +73,6 @@ class GeneratorPanelView(QWidget):
         res_layout.addWidget(self.spn_w)
         res_layout.addWidget(QLabel("x"))
         res_layout.addWidget(self.spn_h)
-        
         form.addRow("Resolution:", res_layout)
 
         self.spn_fps = QSpinBox()
@@ -125,10 +124,34 @@ class GeneratorPanelView(QWidget):
         self.btn_start.clicked.connect(self._request_generation)
         action_layout.addWidget(self.btn_start)
 
-        cv_group = QGroupBox("CV Benchmark (Preview)")
+        cv_group = QGroupBox("CV Benchmark")
         cv_form = QFormLayout(cv_group)
         cv_form.setContentsMargins(DEFAULT_UI_MARGIN, 10, DEFAULT_UI_MARGIN, DEFAULT_UI_MARGIN)
         cv_form.setSpacing(DEFAULT_UI_SPACING)
+
+        # --- DATASET SPLIT UI MOVED HERE ---
+        split_layout = QHBoxLayout()
+        split_layout.setContentsMargins(0, 0, 0, 0)
+        
+        self.spn_split_train = QSpinBox()
+        self.spn_split_train.setRange(0, 100)
+        self.spn_split_train.setValue(70)
+        self.spn_split_train.setSuffix("%")
+        
+        self.spn_split_val = QSpinBox()
+        self.spn_split_val.setRange(0, 100)
+        self.spn_split_val.setValue(20)
+        self.spn_split_val.setSuffix("%")
+        
+        self.spn_split_test = QSpinBox()
+        self.spn_split_test.setRange(0, 100)
+        self.spn_split_test.setValue(10)
+        self.spn_split_test.setSuffix("%")
+        
+        split_layout.addWidget(self.spn_split_train)
+        split_layout.addWidget(self.spn_split_val)
+        split_layout.addWidget(self.spn_split_test)
+        cv_form.addRow("T/V/T Split:", split_layout)
 
         self.cmb_cv_task = QComboBox()
         self.cmb_cv_task.addItems(["auto", "detect", "segment"])
@@ -188,8 +211,7 @@ class GeneratorPanelView(QWidget):
         self._refresh_action_buttons()
 
     def _on_preset_changed(self, text: str) -> None:
-        if text == "Custom":
-            return
+        if text == "Custom": return
         try:
             w_str, h_str = text.split('x')
             w, h = int(w_str), int(h_str)
@@ -211,24 +233,24 @@ class GeneratorPanelView(QWidget):
         if hasattr(self._controller, 'handle_preview_once'):
             self._controller.handle_preview_once()
 
-    def _request_browse(self) -> None: 
-        self._controller.handle_browse_directory()
-
-    def _request_auto_duration(self) -> None: 
-        self._controller.handle_auto_duration()
-
-    def _request_generation(self) -> None: 
-        self._controller.handle_start_generation()
-
-    def _request_cv_benchmark(self) -> None:
-        self._controller.handle_run_cv_benchmark()
-
-    def _toggle_preview(self) -> None: 
-        self._controller.toggle_preview_playback()
+    def _request_browse(self) -> None: self._controller.handle_browse_directory()
+    def _request_auto_duration(self) -> None: self._controller.handle_auto_duration()
+    def _request_generation(self) -> None: self._controller.handle_start_generation()
+    def _request_cv_benchmark(self) -> None: self._controller.handle_run_cv_benchmark()
+    def _toggle_preview(self) -> None: self._controller.toggle_preview_playback()
 
     def get_settings(self) -> Dict[str, Any]:
         fps = self.spn_fps.value()
         duration = self.spn_duration.value()
+        
+        # Calculate split ratios correctly
+        total_split = max(1, self.spn_split_train.value() + self.spn_split_val.value() + self.spn_split_test.value())
+        cv_split_ratios = (
+            self.spn_split_train.value() / total_split,
+            self.spn_split_val.value() / total_split,
+            self.spn_split_test.value() / total_split
+        )
+        
         return {
             "output_dir": self.txt_dir.text().strip(),
             "res_w": self.spn_w.value(),
@@ -237,6 +259,7 @@ class GeneratorPanelView(QWidget):
             "dt": 1.0 / fps,
             "use_rand_light": self.chk_rand_light.isChecked(),
             "use_rand_cam": self.chk_rand_cam.isChecked(),
+            "cv_split_ratios": cv_split_ratios, # Passed to CV Benchmark
             "cv_task": self.cmb_cv_task.currentText(),
             "cv_model": self.txt_cv_model.text().strip(),
             "cv_no_train": self.chk_cv_no_train.isChecked(),
@@ -246,14 +269,9 @@ class GeneratorPanelView(QWidget):
             "cv_conf": float(self.spn_cv_conf.value()),
         }
 
-    def set_directory(self, path: str) -> None: 
-        self.txt_dir.setText(path)
-
-    def set_duration(self, duration: float) -> None: 
-        self.spn_duration.setValue(duration)
-
-    def set_status(self, text: str) -> None: 
-        self.lbl_preview_status.setText(text)
+    def set_directory(self, path: str) -> None: self.txt_dir.setText(path)
+    def set_duration(self, duration: float) -> None: self.spn_duration.setValue(duration)
+    def set_status(self, text: str) -> None: self.lbl_preview_status.setText(text)
     
     def set_progress(self, value: int, maximum: int, text: str) -> None:
         if maximum > 0:
@@ -286,6 +304,9 @@ class GeneratorPanelView(QWidget):
         self.spn_h.setEnabled(can_edit)
         self.chk_rand_light.setEnabled(can_edit)
         self.chk_rand_cam.setEnabled(can_edit)
+        self.spn_split_train.setEnabled(can_edit)
+        self.spn_split_val.setEnabled(can_edit)
+        self.spn_split_test.setEnabled(can_edit)
         self.cmb_cv_task.setEnabled(can_edit)
         self.txt_cv_model.setEnabled(can_edit)
         self.chk_cv_no_train.setEnabled(can_edit)

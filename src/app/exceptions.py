@@ -1,26 +1,24 @@
 """
 Domain-Specific Exceptions.
-Defines the strict exception hierarchy for the 3D Engine. 
-The Engine layer MUST ONLY use these exceptions to report failures.
-Generic Exception() or ValueError() should be wrapped into these before reaching the UI.
+Defines a strict exception hierarchy for the 3D Engine subsystem.
 """
 
 class EngineError(Exception):
-    """Base exception class for all engine-related domain errors."""
+    """Base class for all Engine-related domain exceptions."""
     pass
 
 class ShaderError(EngineError):
-    """Raised when GLSL shader compilation or hardware linking fails."""
+    """Raised when GLSL compilation or program linking fails."""
     pass
 
 class ResourceError(EngineError):
-    """Raised when an external resource (Model, Texture, Configuration) cannot be parsed or loaded."""
+    """Raised when external assets (Models, Textures) fail to load or parse."""
     pass
 
 class RenderError(EngineError):
-    """Raised when an OpenGL state setup, FBO generation, or draw call fails."""
+    """Raised upon failure in OpenGL state configuration or draw calls."""
     pass
 
 class SimulationError(EngineError):
-    """Raised during ECS state violations, logical constraints (e.g., max lights), or math failures."""
+    """Raised upon invalid ECS state transitions or logical constraints violations."""
     pass

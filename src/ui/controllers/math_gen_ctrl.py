@@ -1,14 +1,27 @@
+"""
+Math Generator Controller.
+
+Coordinates the UI inputs for the Procedural Math Surface Generation tool,
+delegating the geometry compilation to the Engine and updating the Scene.
+"""
+
 from src.app import ctx, AppEvent
 from src.ui.error_handler import safe_execute
 from src.ui.views.panels.math_gen_view import MathGeneratorPanelView
 
+
 class MathGenController:
-    """Điều phối công cụ Procedural Math Surface Generation."""
+    """Controller for the procedural mathematical surface generator."""
+    
     def __init__(self) -> None:
         self.view = MathGeneratorPanelView(controller=self)
 
     @safe_execute(context="Generate Math Surface")
     def generate_surface(self, formula: str, xmin: float, xmax: float, ymin: float, ymax: float, res: int) -> None:
+        """
+        Compiles the mathematical formula into a 3D mesh entity.
+        Forces OpenGL context binding if executing within the main Qt window.
+        """
         ctx.events.emit(AppEvent.ACTION_BEFORE_MUTATION)
         
         if hasattr(ctx, 'main_window') and hasattr(ctx.main_window, 'gl_widget'):

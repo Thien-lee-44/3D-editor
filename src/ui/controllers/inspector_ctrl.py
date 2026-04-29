@@ -1,7 +1,16 @@
-from typing import Any, Dict
+"""
+Inspector Controller.
+
+Coordinates data flow for the Properties (Inspector) panel.
+Maps user inputs directly into Component data structures and integrates 
+tightly with the Animation Timeline.
+"""
+
+from typing import Any, Dict, Tuple
 from src.app import ctx, AppEvent
 from src.ui.error_handler import safe_execute
 from src.ui.views.panels.inspector_view import InspectorPanelView
+
 
 class InspectorController:
     """
@@ -9,6 +18,7 @@ class InspectorController:
     Utilizes Atomic Transactions (set_properties) to eliminate event storming 
     and maintain strict UI-Engine synchronization without latency.
     """
+
     def __init__(self) -> None:
         self.view = InspectorPanelView(controller=self)
         self._is_updating_ui = False  
@@ -19,10 +29,12 @@ class InspectorController:
 
     @safe_execute(context="Entity Selection")
     def on_entity_selected(self, entity_id: int) -> None:
+        """Refreshes the inspector context when a new entity is selected."""
         self.refresh_inspector()
 
     @safe_execute(context="Refresh Inspector")
     def refresh_inspector(self, *args: Any) -> None:
+        """Pulls the latest component data from the Engine to populate the UI widgets."""
         self._is_updating_ui = True
         try:
             entity_id = ctx.engine.get_selected_entity_id()
@@ -32,6 +44,7 @@ class InspectorController:
                 
             data = ctx.engine.get_selected_entity_data()
             if data:
+                # Merge animation and semantic tracking data into the UI payload
                 info = ctx.engine.get_animation_info()
                 data["active_keyframe_index"] = info.get("active_idx", -1)
                 data["active_keyframe_time"] = info.get("target_time", 0.0)
@@ -46,7 +59,8 @@ class InspectorController:
         finally:
             self._is_updating_ui = False
 
-    def on_fast_transform_update(self, transform_data: tuple) -> None:
+    def on_fast_transform_update(self, transform_data: Tuple[str, Tuple[float, float, float]]) -> None:
+        """Bypasses full rebuilds to rapidly update SpinBoxes during Gizmo dragging."""
         self._is_updating_ui = True
         try:
             self.view.fast_update_transform(transform_data)
@@ -67,6 +81,7 @@ class InspectorController:
         self.refresh_inspector()
 
     def request_undo_snapshot(self) -> None:
+        """Triggers an Undo save state prior to a modification."""
         ctx.events.emit(AppEvent.ACTION_BEFORE_MUTATION)
 
     @safe_execute(context="Modify Property")
@@ -108,6 +123,7 @@ class InspectorController:
 
     @safe_execute(context="Select Keyframe")
     def select_keyframe_from_inspector(self, index: int) -> None:
+        """Syncs the inspector selection state back to the Timeline Dope Sheet."""
         if hasattr(ctx, 'main_window') and hasattr(ctx.main_window, '_controller'):
             timeline = getattr(ctx.main_window._controller, 'timeline_ctrl', None)
             if timeline:
@@ -117,6 +133,7 @@ class InspectorController:
 
     @safe_execute(context="Add Keyframe")
     def add_keyframe(self, time: float) -> None:
+        """Delegates keyframe addition to the Timeline controller."""
         if self._is_updating_ui: return
         self.request_undo_snapshot()
         
@@ -130,6 +147,7 @@ class InspectorController:
 
     @safe_execute(context="Remove Keyframe")
     def remove_keyframe(self, index: int) -> None:
+        """Deletes a specific keyframe track index."""
         if self._is_updating_ui: return
         self.request_undo_snapshot()
         ctx.engine.set_component_properties("Animation", {"REMOVE_KEYFRAME": index})
@@ -138,6 +156,7 @@ class InspectorController:
 
     @safe_execute(context="Set Keyframe Time")
     def set_active_keyframe_time(self, time: float) -> None:
+        """Shifts an existing keyframe horizontally on the timeline from the Inspector input."""
         if self._is_updating_ui: return
         self.request_undo_snapshot()
         
@@ -157,10 +176,12 @@ class InspectorController:
             ctx.events.emit(AppEvent.SCENE_CHANGED)
 
     def get_semantic_classes(self) -> dict:
+        """Retrieves the list of AI dataset classes."""
         return ctx.engine.get_semantic_classes()
 
     @safe_execute(context="Add Semantic Class")
     def add_semantic_class(self, name: str) -> int:
+        """Registers a new AI labeling class."""
         if self._is_updating_ui: return 0
         self.request_undo_snapshot()
         new_id = ctx.engine.add_semantic_class(name)
@@ -169,6 +190,7 @@ class InspectorController:
 
     @safe_execute(context="Update Semantic Class Color")
     def update_semantic_class_color(self, class_id: int, color: list) -> None:
+        """Updates the visual UI color representing a specific class."""
         if self._is_updating_ui: return
         self.request_undo_snapshot()
         ctx.engine.update_semantic_class_color(class_id, color)
@@ -176,6 +198,7 @@ class InspectorController:
 
     @safe_execute(context="Remove Semantic Class")
     def remove_semantic_class(self, class_id: int) -> None:
+        """Deletes a custom semantic class from the registry."""
         if self._is_updating_ui: return
         self.request_undo_snapshot()
         ctx.engine.remove_semantic_class(class_id)
@@ -184,6 +207,7 @@ class InspectorController:
 
     @safe_execute(context="Reset Transform")
     def reset_transform(self) -> None:
+        """Resets position, rotation, and scale back to defaults."""
         if self._is_updating_ui: return
         self.request_undo_snapshot()
         idx = ctx.engine.get_selected_entity_id()
@@ -205,6 +229,7 @@ class InspectorController:
 
     @safe_execute(context="Update Light Direction")
     def update_light_direction(self, yaw: float, pitch: float) -> None:
+        """Specifically handles updates to Directional/Spotlight Euler angles."""
         if self._is_updating_ui: return
         ctx.engine.update_light_direction(yaw, pitch)
         
@@ -226,6 +251,7 @@ class InspectorController:
 
     @safe_execute(context="Load Texture")
     def load_texture(self, map_attr: str, filepath: str) -> None:
+        """Binds a texture file to a material slot directly from the Inspector dialog."""
         if self._is_updating_ui: return
         self.request_undo_snapshot()
         timeline = getattr(ctx.main_window._controller, 'timeline_ctrl', None) if hasattr(ctx, 'main_window') else None
@@ -260,6 +286,7 @@ class InspectorController:
 
     @safe_execute(context="Remove Texture")
     def remove_texture(self, map_attr: str) -> None:
+        """Unbinds a texture from the active material slot."""
         if self._is_updating_ui: return
         self.request_undo_snapshot()
         timeline = getattr(ctx.main_window._controller, 'timeline_ctrl', None) if hasattr(ctx, 'main_window') else None

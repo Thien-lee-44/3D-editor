@@ -1,20 +1,30 @@
+"""
+Hardware Buffer Management.
+
+Encapsulates OpenGL Vertex Array Objects (VAO), Vertex Buffer Objects (VBO), 
+and Element Buffer Objects (EBO). Manages geometry data transmission to GPU memory.
+"""
+
 import ctypes
 import numpy as np
-import glm
 from OpenGL.GL import *
 from typing import Optional, List, Union
 
 from src.app.config import DEFAULT_POINT_SIZE
 
+
 class BufferObject:
     """
-    Encapsulates OpenGL Vertex Array Objects (VAO), Vertex Buffer Objects (VBO), 
-    and Element Buffer Objects (EBO). 
-    Architectural Note: This class strictly manages raw geometry data transmission 
-    to the GPU memory and computes spatial bounds for AI annotation.
+    Manages the lifecycle of OpenGL buffer states.
+    Architectural Note: This class strictly handles raw geometry data transmission 
+    to the VRAM and retains basic topology info for draw calls.
     """
     
-    def __init__(self, vertices: Union[List[float], np.ndarray], indices: Optional[Union[List[int], np.ndarray]] = None, vertex_size: int = 8, render_mode: int = GL_TRIANGLES) -> None:
+    def __init__(self, vertices: Union[List[float], np.ndarray], 
+                 indices: Optional[Union[List[int], np.ndarray]] = None, 
+                 vertex_size: int = 8, 
+                 render_mode: int = GL_TRIANGLES) -> None:
+                     
         self.vertex_size = vertex_size 
         self.render_mode = render_mode
         self.vertices = np.ascontiguousarray(vertices, dtype=np.float32)
@@ -28,6 +38,7 @@ class BufferObject:
         self._setup_opengl_buffers()
 
     def _setup_opengl_buffers(self) -> None:
+        """Configures memory layout and binds attribute pointers for the shader pipeline."""
         self.vao = glGenVertexArrays(1)
         glBindVertexArray(self.vao)
         
@@ -50,17 +61,21 @@ class BufferObject:
                 GL_STATIC_DRAW
             )
             
-        stride = self.vertex_size * 4 
+        stride = self.vertex_size * 4 # 4 bytes per float
         
+        # Position attribute (Vec3)
         glEnableVertexAttribArray(0)
         glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, stride, ctypes.c_void_p(0))
         
+        # Normal attribute (Vec3)
         glEnableVertexAttribArray(1)
         glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, stride, ctypes.c_void_p(3 * 4))
         
+        # UV/Texture coordinates (Vec2)
         glEnableVertexAttribArray(2)
         glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, stride, ctypes.c_void_p(6 * 4))
         
+        # Color attribute (Vec3) - Optional based on vertex layout
         if self.has_vertex_color:
             glEnableVertexAttribArray(3)
             glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, stride, ctypes.c_void_p(8 * 4))
@@ -71,6 +86,7 @@ class BufferObject:
         glBindVertexArray(0)
 
     def draw(self) -> None:
+        """Executes the OpenGL draw call based on the configured topology."""
         glBindVertexArray(self.vao)
         if self.indices is not None:
             glDrawElements(self.render_mode, len(self.indices), GL_UNSIGNED_INT, None)
@@ -83,6 +99,7 @@ class BufferObject:
         glBindVertexArray(0)
         
     def delete_buffers(self) -> None:
+        """Frees VRAM resources. Must be called when the entity is destroyed."""
         glDeleteVertexArrays(1, [self.vao])
         glDeleteBuffers(1, [self.vbo])
         if self.indices is not None:

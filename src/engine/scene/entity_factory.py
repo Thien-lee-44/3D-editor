@@ -1,6 +1,14 @@
+"""
+Entity Factory.
+
+Implements the Abstract Factory design pattern for assembling complex Entity configurations.
+Provides safe interfaces to instantiate geometry, lights, cameras, and deep hierarchies.
+"""
+
 import os
 import glm
-from typing import Any, Optional, Dict, List
+from typing import Any, Dict, List
+
 from src.engine.scene.entity import Entity
 from src.engine.scene.components import TransformComponent, MeshRenderer, LightComponent, CameraComponent
 from src.engine.geometry.primitives import PrimitivesManager
@@ -16,9 +24,10 @@ from src.app.config import (
     DEFAULT_CAMERA_NAME, DEFAULT_SCENE_CAM_POS, DEFAULT_SCENE_LIGHT_ROT
 )
 
+
 class EntityFactory:
     """
-    Implements the Abstract Factory design pattern for assembling complex Entity configurations.
+    Centralized factory responsible for generating pre-configured Entity templates.
     Strictly adheres to the Single Responsibility Principle by decoupling Animation from Semantics.
     """
     
@@ -37,6 +46,8 @@ class EntityFactory:
         ent.add_component(SemanticComponent(class_id=class_id))
 
     def setup_default_scene(self) -> None:
+        """Bootstraps an empty scene with a Main Camera, Directional Light, and a basic Cube."""
+        # 1. Main Camera
         cam = Entity(DEFAULT_CAMERA_NAME)
         tf = cam.add_component(TransformComponent())
         tf.position = glm.vec3(*DEFAULT_SCENE_CAM_POS)
@@ -62,6 +73,7 @@ class EntityFactory:
                 
         self.scene.add_entity(cam)
 
+        # 2. Directional Light
         light = Entity("Directional Light")
         tf = light.add_component(TransformComponent())
         tf.rotation = glm.vec3(*DEFAULT_SCENE_LIGHT_ROT)
@@ -73,6 +85,7 @@ class EntityFactory:
         light.add_component(LightComponent(light_type="Directional"))
         self.scene.add_entity(light)
 
+        # 3. Default Cube
         cube_entity = Entity("Default Cube")
         cube_entity.add_component(TransformComponent())
         
@@ -87,6 +100,7 @@ class EntityFactory:
         self.scene.add_entity(cube_entity)
         
     def add_empty_group(self) -> None:
+        """Instantiates a logical grouping container without rendering properties."""
         ent = Entity(DEFAULT_GROUP_NAME, is_group=True)
         ent.add_component(TransformComponent())
         
@@ -96,6 +110,7 @@ class EntityFactory:
         self.scene.add_entity(ent)
 
     def spawn_primitive(self, name: str, is_2d: bool) -> None:
+        """Fetches and spawns a standardized primitive geometry (e.g. Cone, Sphere)."""
         geom = PrimitivesManager.get_primitive(name, is_2d)
         
         if geom:
@@ -114,6 +129,7 @@ class EntityFactory:
             self.scene.add_entity(ent)
 
     def spawn_math_surface(self, formula: str, xmin: float, xmax: float, ymin: float, ymax: float, res: int) -> None:
+        """Compiles a procedural mathematical surface directly into a renderable entity."""
         from src.engine.geometry.math_surface import MathSurface
         
         ent = Entity(f"Math: {formula}")
@@ -130,6 +146,7 @@ class EntityFactory:
         self.scene.add_entity(ent)
 
     def add_light(self, light_type: str, proxy_enabled: bool, global_light_on: bool) -> None:
+        """Instantiates a specific light source and guards against hardware shader limits."""
         current_count = sum(1 for _, l, _ in self.scene.cached_lights if l.type == light_type)
         limit = MAX_LIGHTS.get(light_type, 0)
         
@@ -139,6 +156,7 @@ class EntityFactory:
         ent = Entity(f"{light_type} Light")
         tf = ent.add_component(TransformComponent())
         
+        # Enforce physical axis constraints based on light type
         if light_type == "Directional":
             tf.locked_axes["pos"] = True
             tf.locked_axes["scl"] = True
@@ -153,12 +171,12 @@ class EntityFactory:
         light_comp = ent.add_component(LightComponent(light_type=light_type))
         light_comp.on = global_light_on
         
+        # Attach Editor visual proxies
         if light_type != "Directional":
             renderer = ent.add_component(MeshRenderer())
             renderer.is_proxy = True
             renderer.visible = proxy_enabled
 
-            
             if light_type == "Point": 
                 renderer.geometry = PrimitivesManager.get_proxy("proxy_point.ply")
                 tf.scale = glm.vec3(DEFAULT_PROXY_SCALE)
@@ -169,6 +187,7 @@ class EntityFactory:
         self.scene.add_entity(ent)
 
     def add_camera(self, proxy_enabled: bool) -> None:
+        """Spawns an auxiliary camera into the scene."""
         ent = Entity("Camera")
         tf = ent.add_component(TransformComponent())
         tf.locked_axes["scl"] = True
@@ -186,6 +205,10 @@ class EntityFactory:
         self.scene.add_entity(ent)
 
     def spawn_model_from_path(self, path: str) -> None:
+        """
+        Loads a 3D asset from disk, parsing its sub-meshes and materials to generate
+        a completely accurate Entity tree replicating the file's original hierarchy.
+        """
         try:
             mesh_data_list = ResourceManager.get_model(path)
             raw_name = os.path.splitext(os.path.basename(path))[0]

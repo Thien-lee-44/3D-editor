@@ -1,4 +1,11 @@
-from typing import Any, Dict, List
+"""
+Transform Widget.
+
+Provides the Inspector UI for configuring an entity's 3D spatial properties
+(Position, Rotation, Scale). Maintains extreme precision using internal shadow states.
+"""
+
+from typing import Any, Dict, List, Tuple
 from PySide6.QtWidgets import QPushButton
 from src.ui.widgets.custom_inputs import create_vec3_input
 from .base_widget import BaseComponentWidget, set_vec3_spinboxes
@@ -10,12 +17,14 @@ from src.app.config import (
     TRANSFORM_SCL_MIN, TRANSFORM_SCL_STEP
 )
 
+
 class TransformWidget(BaseComponentWidget):
     """
     Inspector widget handling exact spatial values.
     Implements a 64-bit shadow state to prevent floating-point precision loss 
     caused by UI truncation when evaluating non-uniform hierarchical scaling.
     """
+
     def __init__(self, controller: Any) -> None:
         super().__init__("Transform", controller)
         self._controller = controller 
@@ -38,10 +47,12 @@ class TransformWidget(BaseComponentWidget):
         self._exact_scl: List[float] = [1.0, 1.0, 1.0]
 
     def request_undo(self) -> None:
+        """Triggers an Undo snapshot before an incoming modification."""
         if self._controller:
             self._controller.request_undo_snapshot()
 
     def update_data(self, tf_data: Dict[str, Any]) -> None:
+        """Refreshes the UI inputs taking into account active lock states (e.g., rigidbodies)."""
         locked = tf_data.get("locked_axes", {"pos": False, "rot": False, "scl": False})
 
         self.w_pos.setEnabled(not locked.get("pos", False))
@@ -51,6 +62,7 @@ class TransformWidget(BaseComponentWidget):
         self.fast_update(tf_data)
 
     def fast_update(self, tf_data: Dict[str, Any]) -> None:
+        """Updates the physical input displays silently without firing cascading UI events."""
         if not tf_data: 
             return
             
@@ -64,7 +76,8 @@ class TransformWidget(BaseComponentWidget):
         set_vec3_spinboxes(self.sp_scl, self._exact_scl)
         self._block_all_signals(False)
 
-    def fast_update_single_axis(self, mode: str, values: tuple) -> None:
+    def fast_update_single_axis(self, mode: str, values: Tuple[float, float, float]) -> None:
+        """Rapidly updates a specific spatial vector, commonly used during Viewport gizmo dragging."""
         self._block_all_signals(True)
         if mode == "MOVE" and self.w_pos.isEnabled():
             self._exact_pos = list(values)
@@ -78,25 +91,29 @@ class TransformWidget(BaseComponentWidget):
         self._block_all_signals(False)
 
     def _block_all_signals(self, state: bool) -> None:
+        """Bulk utility to block/unblock signals for all transform input boxes."""
         for sp in self.sp_pos + self.sp_rot + self.sp_scl:
             sp.blockSignals(state)
 
     def reset_transform(self) -> None:
+        """Commands the controller to zero out all transformations for this entity."""
         if self._controller:
             self._controller.reset_transform()
 
     def apply_position(self) -> None:
+        """Commits the local position modifications to the backend component."""
         if not self._controller or not self.w_pos.isEnabled(): 
             return
+            
         sender = self.sender()
         updated = False
         for i, sp in enumerate(self.sp_pos):
-            # Trực tiếp nhận giá trị nếu người dùng gõ trên ô này
+            # Prioritize retrieving exact values if manually typed by the user
             if sender == sp:
                 self._exact_pos[i] = sp.value()
                 updated = True
         
-        # Fallback an toàn nếu tín hiệu không phải từ UI nhập tay
+        # Safe fallback: Check differences if signal origin is ambiguous
         if not updated:
             for i, sp in enumerate(self.sp_pos):
                 ui_val = sp.value()
@@ -106,8 +123,10 @@ class TransformWidget(BaseComponentWidget):
         self._controller.set_property("Transform", "position", self._exact_pos)
 
     def apply_rotation(self) -> None:
+        """Commits the local Euler rotation modifications to the backend component."""
         if not self._controller or not self.w_rot.isEnabled(): 
             return
+            
         sender = self.sender()
         updated = False
         for i, sp in enumerate(self.sp_rot):
@@ -124,8 +143,10 @@ class TransformWidget(BaseComponentWidget):
         self._controller.set_property("Transform", "rotation", self._exact_rot)
 
     def apply_scale(self) -> None:
+        """Commits the local scale modifications to the backend component."""
         if not self._controller or not self.w_scl.isEnabled(): 
             return
+            
         sender = self.sender()
         updated = False
         for i, sp in enumerate(self.sp_scl):

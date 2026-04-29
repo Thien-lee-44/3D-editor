@@ -1,3 +1,11 @@
+"""
+Generator Controller.
+
+Manages the Synthetic Data Generation UI panel.
+Coordinates the live preview loop, asynchronous dataset batch generation, 
+and automated CV benchmark orchestration via the Engine Facade.
+"""
+
 import time
 from datetime import datetime
 from pathlib import Path
@@ -6,19 +14,19 @@ from typing import Any, Dict, Optional
 from PySide6.QtWidgets import QMessageBox, QFileDialog, QApplication
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QOpenGLContext
-import numpy as np  
 
 from src.app import ctx
 from src.ui.error_handler import safe_execute
 from src.ui.views.panels.generator_view import GeneratorPanelView
-from src.engine.synthetic.generator import SyntheticDataGenerator
-from src.engine.synthetic.cv_benchmark import CVBenchmarkRunner, CVBenchmarkConfig
+
 
 class GeneratorController:
+    """Coordinates interaction between the Dataset Generator UI and the Engine Backend."""
+
     def __init__(self) -> None:
         self.view = GeneratorPanelView(controller=self)
-        self.generator_backend: Optional[SyntheticDataGenerator] = None
         self._last_payload: Optional[Dict[str, Any]] = None
+        self._last_generated_dir: Optional[str] = None  
         
         self.preview_timer = QTimer()
         self.preview_timer.setTimerType(Qt.PreciseTimer)
@@ -32,11 +40,8 @@ class GeneratorController:
         
         self._last_real_time: float = 0.0
 
-    def _ensure_backend(self) -> None:
-        if self.generator_backend is None:
-            self.generator_backend = SyntheticDataGenerator(ctx.engine)
-
     def _ensure_preview_mode(self) -> None:
+        """Forces the UI to switch to the Data Preview tab context."""
         if hasattr(ctx, "main_window"):
             if hasattr(ctx.main_window, "stacked_view") and ctx.main_window.stacked_view.currentIndex() != 1:
                 ctx.main_window.stacked_view.setCurrentIndex(1)
@@ -44,21 +49,26 @@ class GeneratorController:
                 ctx.main_window.mode_selector.setCurrentIndex(1)
 
     def _set_main_window_status(self, text: str) -> None:
+        """Updates the global status bar label."""
         if hasattr(ctx, 'main_window') and hasattr(ctx.main_window, 'lbl_preview_status'):
             ctx.main_window.lbl_preview_status.setText(text)
 
     def _set_main_window_time(self, current_time: float) -> None:
+        """Updates the global timeline indicator."""
         if hasattr(ctx, 'main_window') and hasattr(ctx.main_window, 'lbl_preview_time'):
             ctx.main_window.lbl_preview_time.setText(f"Time: {current_time:.2f}s")
 
     def _update_main_window_stats(self, payload: Dict[str, Any]) -> None:
-        if not payload: return
+        """Refreshes rendering statistics (e.g., active object count)."""
+        if not payload: 
+            return
         stats = payload.get("stats", {})
         num_obj = stats.get('num_objects', len(payload.get("objects", [])))
         if hasattr(ctx, 'main_window') and hasattr(ctx.main_window, 'lbl_preview_stats'):
             ctx.main_window.lbl_preview_stats.setText(f"Obj: {num_obj}")
 
     def _push_to_viewport(self, payload: Dict[str, Any]) -> None:
+        """Forwards the rendered FBO pixel payload to the UI viewport canvas."""
         if not payload: 
             return
         self._last_payload = payload
@@ -69,9 +79,11 @@ class GeneratorController:
         self._update_main_window_stats(payload)
 
     def refresh_preview_display(self) -> None:
+        """Forces an immediate redraw of the preview viewport."""
         self.handle_preview_once()
 
     def _run_preview_render(self, w: int, h: int, active_mode: str = "RGB", is_playing: bool = False) -> Optional[Dict[str, Any]]:
+        """Handles the OpenGL context lifecycle and commands the Engine Facade to render a preview frame."""
         payload = None
         has_gl = hasattr(ctx, "main_window") and hasattr(ctx.main_window, "gl_widget")
         viewport = getattr(ctx.main_window, "preview_viewport", None) if hasattr(ctx, "main_window") else None
@@ -93,13 +105,7 @@ class GeneratorController:
             return {}
             
         try:
-            payload = self.generator_backend.extract_preview_frame(
-                w,
-                h,
-                active_mode,
-                is_playing,
-                show_bbox=show_bbox,
-            )
+            payload = ctx.engine.get_synthetic_preview(w, h, active_mode, is_playing, show_bbox)
         finally:
             if context_acquired and context_widget is not None and hasattr(context_widget, "doneCurrent"):
                 try:
@@ -111,7 +117,7 @@ class GeneratorController:
 
     @safe_execute(context="Preview One Frame")
     def handle_preview_once(self) -> None:
-        self._ensure_backend()
+        """Renders and displays a single static preview frame."""
         self._ensure_preview_mode()
         
         settings = self.view.get_settings()
@@ -128,7 +134,7 @@ class GeneratorController:
         self._push_to_viewport(payload)
 
     def toggle_preview_playback(self) -> bool:
-        self._ensure_backend()
+        """Starts or stops the continuous timeline preview simulation."""
         self._ensure_preview_mode()
         
         if self.is_playing:
@@ -154,12 +160,12 @@ class GeneratorController:
         return self.is_playing
 
     def stop_preview_playback(self) -> None:
+        """Halt the preview playback and resets simulation pointers."""
         self.preview_timer.stop()
         self.is_playing = False
         self.sim_time = 0.0
         self.sim_frame = 0
         self.view.set_preview_state(False)
-        
         self._set_main_window_status("Status: Idle")
         
         animator = getattr(ctx.engine, "animator", None)
@@ -169,6 +175,7 @@ class GeneratorController:
         self.handle_preview_once() 
 
     def _on_playback_tick(self) -> None:
+        """Fired by the QTimer to process the next simulation step."""
         viewport = getattr(ctx.main_window, "preview_viewport", None)
         if viewport and hasattr(viewport, "isVisible") and not viewport.isVisible():
             self.stop_preview_playback()
@@ -183,11 +190,12 @@ class GeneratorController:
         steps_due = max(1, int(elapsed / max(self.sim_dt, 1e-6)))
         steps_due = min(steps_due, 5)
         remaining_steps = self.sim_total_frames - self.sim_frame
+        
         if remaining_steps <= 0:
             self.stop_preview_playback()
             return
+            
         steps_due = min(steps_due, remaining_steps)
-
         self._last_real_time = current_real_time
 
         if self.sim_frame >= self.sim_total_frames:
@@ -212,8 +220,8 @@ class GeneratorController:
         except Exception:
             self.stop_preview_playback()
             return
+            
         self._push_to_viewport(payload)
-
         self._set_main_window_time(render_time)
 
         self.sim_time = render_time + self.sim_dt
@@ -221,19 +229,15 @@ class GeneratorController:
 
     @safe_execute(context="Browse Directory")
     def handle_browse_directory(self) -> None:
+        """Opens a file dialog to select the dataset output directory."""
         path = QFileDialog.getExistingDirectory(ctx.main_window, "Select Dataset Output Directory")
         if path:
             self.view.set_directory(path)
 
     @safe_execute(context="Auto Detect Duration")
     def handle_auto_duration(self) -> None:
-        from src.engine.scene.components.animation_cmp import AnimationComponent
-        max_duration = 0.0
-        for ent in ctx.engine.scene.entities:
-            anim = ent.get_component(AnimationComponent)
-            if anim and anim.duration > max_duration: 
-                max_duration = anim.duration
-                
+        """Scans the scene via Facade to locate the longest animation track duration."""
+        max_duration = ctx.engine.get_max_animation_duration()
         if max_duration > 0:
             self.view.set_duration(max_duration)
         else:
@@ -241,26 +245,21 @@ class GeneratorController:
 
     @safe_execute(context="Dataset Generation")
     def handle_start_generation(self) -> None:
+        """Orchestrates the synchronous bulk-generation of the dataset."""
         settings = self.view.get_settings()
-        self._ensure_backend()
 
         try:
-            target_dir = settings["output_dir"] if settings["output_dir"] else None
-            self.generator_backend.setup_directories(target_dir)
             self.view.set_ui_locked(True)
             total_frames = settings["num_frames"]
             
             self.view.set_progress(0, total_frames, "Initializing...")
             self._set_main_window_status("Status: Rendering Data...")
-            preview_stride = max(1, total_frames // 120)
             
             def progress_callback(frame_idx: int, preview_payload: Optional[Dict[str, Any]] = None, stats: Optional[Dict[str, Any]] = None) -> None:
                 self.view.set_progress(frame_idx, total_frames, f"Rendering {frame_idx}/{total_frames} frames")
-                
                 if preview_payload:
                     self._ensure_preview_mode()
                     self._push_to_viewport(preview_payload)
-
                 QApplication.processEvents()
                 
                 if hasattr(ctx, 'main_window') and hasattr(ctx.main_window, 'gl_widget'):
@@ -268,29 +267,10 @@ class GeneratorController:
 
             if hasattr(ctx, 'main_window') and hasattr(ctx.main_window, 'gl_widget'):
                 ctx.main_window.gl_widget.makeCurrent()
-                self.generator_backend.generate_batch(
-                    num_frames=total_frames, 
-                    dt=settings["dt"],
-                    res_w=settings["res_w"],
-                    res_h=settings["res_h"],
-                    use_rand_light=settings["use_rand_light"],
-                    use_rand_cam=settings["use_rand_cam"],
-                    progress_cb=progress_callback,
-                    preview_stride=preview_stride, 
-                )
-            else:
-                self.generator_backend.generate_batch(
-                    num_frames=total_frames, 
-                    dt=settings["dt"],
-                    res_w=settings["res_w"],
-                    res_h=settings["res_h"],
-                    use_rand_light=settings["use_rand_light"],
-                    use_rand_cam=settings["use_rand_cam"],
-                    progress_cb=progress_callback,
-                    preview_stride=preview_stride, 
-                )
+
+            final_path = ctx.engine.run_synthetic_generation(settings, progress_callback)
+            self._last_generated_dir = final_path 
             
-            final_path = self.generator_backend.output_dir
             self.view.set_progress(total_frames, total_frames, "Completed!")
             self._set_main_window_status("Status: Idle")
             
@@ -299,11 +279,16 @@ class GeneratorController:
             self.view.set_progress(0, 0, "") 
             
         finally:
+            if hasattr(ctx, 'main_window') and hasattr(ctx.main_window, 'gl_widget'):
+                try:
+                    ctx.main_window.gl_widget.doneCurrent()
+                except Exception:
+                    pass
             self.view.set_ui_locked(False)
 
     @safe_execute(context="CV Benchmark")
     def handle_run_cv_benchmark(self) -> None:
-        self._ensure_backend()
+        """Validates the exported dataset and launches the YOLO training pipeline via Facade."""
         self._ensure_preview_mode()
 
         if self.is_playing:
@@ -311,10 +296,15 @@ class GeneratorController:
 
         settings = self.view.get_settings()
         selected_output = str(settings.get("output_dir", "")).strip()
+        
         if selected_output:
             dataset_dir = Path(selected_output).resolve()
         else:
-            dataset_dir = self.generator_backend.output_dir.resolve()
+            if not self._last_generated_dir:
+                raise FileNotFoundError(
+                    "Missing dataset directory. Please specify an output directory or click 'START BATCH GENERATION' first."
+                )
+            dataset_dir = Path(self._last_generated_dir).resolve()
 
         dataset_yaml = dataset_dir / "dataset.yaml"
         if not dataset_yaml.exists():
@@ -328,18 +318,17 @@ class GeneratorController:
         run_training = not bool(settings.get("cv_no_train", True))
 
         benchmark_output = dataset_dir.parent / "cv_benchmark_ui" / datetime.now().strftime("%Y%m%d_%H%M%S")
-        variant_name = dataset_dir.name or "dataset"
 
-        config = CVBenchmarkConfig(
-            model_type=model_name,
-            task=task if task in {"auto", "detect", "segment"} else "auto",
-            epochs=max(1, int(settings.get("cv_epochs", 3))),
-            batch_size=max(1, int(settings.get("cv_batch", 8))),
-            imgsz=max(32, int(settings.get("cv_imgsz", 640))),
-            confidence_threshold=float(settings.get("cv_conf", 0.25)),
-            run_training=run_training,
-        )
-        runner = CVBenchmarkRunner(output_dir=benchmark_output, config=config)
+        config_dict = {
+            "model_type": model_name,
+            "task": task if task in {"auto", "detect", "segment"} else "auto",
+            "epochs": max(1, int(settings.get("cv_epochs", 3))),
+            "batch_size": max(1, int(settings.get("cv_batch", 8))),
+            "imgsz": max(32, int(settings.get("cv_imgsz", 640))),
+            "confidence_threshold": float(settings.get("cv_conf", 0.25)),
+            "run_training": run_training,
+            "split_ratios": settings.get("cv_split_ratios", (0.7, 0.2, 0.1))
+        }
 
         try:
             self.view.set_ui_locked(True)
@@ -347,7 +336,8 @@ class GeneratorController:
             self._set_main_window_status("Status: Benchmark Running...")
             QApplication.processEvents()
 
-            result = runner.run({variant_name: dataset_dir})
+            result = ctx.engine.run_cv_benchmark(config_dict, dataset_dir, benchmark_output)
+            
             records = result.get("records", []) or []
             record = records[0] if records else {}
             status = str(record.get("status", "unknown"))
@@ -394,6 +384,6 @@ class GeneratorController:
             self.view.set_ui_locked(False)
             self._set_main_window_status("Status: Idle")
 
-    # Legacy method kept for compatibility with older UI wiring.
     def handle_run_cv_proof(self) -> None:
+        """Legacy method kept for compatibility with older UI signal wiring."""
         self.handle_run_cv_benchmark()

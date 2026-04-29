@@ -1,4 +1,12 @@
-from typing import Any, Optional
+"""
+Timeline Controller.
+
+Coordinates the animation timeline, playhead state, and Dope Sheet UI.
+Interfaces with the Engine's AnimatorSystem via Qt QTimers to provide 
+real-time continuous playback capabilities.
+"""
+
+from typing import Any, Dict, Optional
 from PySide6.QtCore import QTimer
 import time
 
@@ -6,7 +14,10 @@ from src.app import ctx, AppEvent
 from src.ui.error_handler import safe_execute
 from src.ui.views.panels.timeline_view import TimelinePanelView
 
+
 class TimelineController:
+    """Manages playback state and keyframe manipulation logic."""
+    
     def __init__(self) -> None:
         self.view = TimelinePanelView(controller=self)
         self.is_updating_ui: bool = False
@@ -26,6 +37,7 @@ class TimelineController:
 
     @safe_execute(context="Select Keyframe")
     def select_keyframe(self, index: int) -> None:
+        """Sets the active UI focus to a specific keyframe in the Dope Sheet."""
         self.selected_kf_idx = index
         target_time = ctx.engine.set_active_keyframe(index)
         
@@ -36,16 +48,18 @@ class TimelineController:
 
     @safe_execute(context="Toggle Playback")
     def toggle_playback(self, is_playing: bool) -> None:
+        """Starts or pauses the animation playback loop."""
         self.is_playing = is_playing
         if is_playing:
             self.select_keyframe(-1)
             self.view.deselect_keyframe_ui()
             self._last_time = time.time()
-            self.playback_timer.start(16) 
+            self.playback_timer.start(16) # Roughly ~60fps target
         else:
             self.playback_timer.stop()
 
     def _on_playback_tick(self) -> None:
+        """Triggered periodically by the QTimer to step the timeline forward."""
         now = time.time()
         dt = now - self._last_time
         self._last_time = now
@@ -53,12 +67,14 @@ class TimelineController:
 
     @safe_execute(context="Rewind Timeline")
     def rewind_timeline(self) -> None:
+        """Returns the playhead to timestamp 0.0."""
         self.select_keyframe(-1)
         self.view.deselect_keyframe_ui()
         self.set_time(0.0)
 
     @safe_execute(context="Set Timeline Time")
     def set_time(self, time_sec: float) -> None:
+        """Forces the scene state to reflect the interpolated values at a specific timestamp."""
         if self.selected_kf_idx != -1 and not self.is_playing:
             info = ctx.engine.get_animation_info()
             if info and info.get("active_idx", -1) == self.selected_kf_idx:
@@ -75,13 +91,15 @@ class TimelineController:
 
     @safe_execute(context="Add Keyframe")
     def add_keyframe_at_current(self) -> None:
+        """Bakes current spatial values into a new keyframe at the playhead position."""
         self.add_keyframe_at_time(self.current_time)
 
     @safe_execute(context="Add Keyframe At Time")
-    def add_keyframe_at_time(self, time: float) -> None:
+    def add_keyframe_at_time(self, time_val: float) -> None:
+        """Bakes spatial values into a specific timestamp."""
         ctx.events.emit(AppEvent.ACTION_BEFORE_MUTATION)
         
-        new_idx = ctx.engine.add_and_focus_keyframe(time)
+        new_idx = ctx.engine.add_and_focus_keyframe(time_val)
         self._refresh_dope_sheet()
         
         if new_idx >= 0:
@@ -94,6 +112,7 @@ class TimelineController:
 
     @safe_execute(context="Move Keyframe")
     def move_keyframe(self, index: int, new_time: float) -> None:
+        """Shifts an existing keyframe horizontally along the timeline."""
         ctx.events.emit(AppEvent.ACTION_BEFORE_MUTATION)
         ctx.engine.set_component_property("Animation", "MOVE_KEYFRAME", {"index": index, "time": new_time})
         self._refresh_dope_sheet()
@@ -108,7 +127,8 @@ class TimelineController:
         ctx.events.emit(AppEvent.SCENE_CHANGED)
 
     @safe_execute(context="Mutate Keyframes")
-    def mutate_keyframes(self, payload: dict) -> None:
+    def mutate_keyframes(self, payload: Dict[str, Any]) -> None:
+        """Applies bulk modification commands to multiple keyframes simultaneously."""
         ctx.events.emit(AppEvent.ACTION_BEFORE_MUTATION)
         ctx.engine.set_component_property("Animation", "MUTATE_KEYFRAMES", payload)
         self._refresh_dope_sheet()
@@ -121,6 +141,7 @@ class TimelineController:
 
     @safe_execute(context="Clear Keyframes")
     def clear_keyframes(self) -> None:
+        """Deletes all animation tracks for the currently selected entity."""
         ctx.events.emit(AppEvent.ACTION_BEFORE_MUTATION)
         ctx.engine.set_component_property("Animation", "CLEAR_KEYFRAMES", None)
         self.selected_kf_idx = -1
@@ -134,12 +155,14 @@ class TimelineController:
 
     @safe_execute(context="Open Render Settings")
     def open_render_settings(self) -> None:
+        """Launches the Synthetic Data Generation configuration dialog."""
         if self.generator_ctrl is None:
             from src.ui.controllers.generator_ctrl import GeneratorController
             self.generator_ctrl = GeneratorController()
         self.generator_ctrl.show_dialog()
 
     def advance_time(self, dt: float) -> None:
+        """Steps the logical animation time forward by delta seconds."""
         if not self.is_playing:
             return
             
@@ -156,6 +179,7 @@ class TimelineController:
             ctx.events.emit(AppEvent.SCENE_CHANGED)
 
     def _on_entity_selected(self, entity_id: int) -> None:
+        """Callback responding to user selecting a different object in the scene."""
         if self.current_entity_id == entity_id:
             return 
             
@@ -177,6 +201,7 @@ class TimelineController:
             ctx.events.emit(AppEvent.COMPONENT_PROPERTY_CHANGED)
         
     def _refresh_dope_sheet(self) -> None:
+        """Fetches active timeline data and redraws the graphical UI track markers."""
         info = ctx.engine.get_animation_info()
         
         if not info:

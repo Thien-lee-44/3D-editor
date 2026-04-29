@@ -1,4 +1,8 @@
-import os
+"""
+Geometry Primitives Provisioner.
+Implements Lazy Initialization to cache foundational meshes and editor proxies.
+"""
+
 from pathlib import Path
 from typing import Dict, Optional, Any
 from src.engine.resources.resource_manager import ResourceManager
@@ -6,10 +10,8 @@ from src.app.config import MODELS_DIR
 
 class PrimitivesManager:
     """
-    Acts as a centralized provisioner for foundational geometric meshes (Cube, Sphere, etc.) 
-    and Editor proxy models (Camera/Light icons).
-    Architecture Note: Employs a Lazy Initialization pattern. Primitive BufferObjects are 
-    only loaded into VRAM upon their first request, then cached globally by the ResourceManager.
+    Centralized loader for 2D/3D primitives and editor utility models.
+    Delegates actual VRAM upload to the ResourceManager.
     """
     
     DIR_2D: Path = MODELS_DIR / "primitives" / "2d"
@@ -19,8 +21,7 @@ class PrimitivesManager:
     @classmethod
     def _scan_dir(cls, directory: Path) -> Dict[str, str]:
         """
-        Traverses a target directory and constructs a mapping of formatted, 
-        human-readable primitive names to their absolute file paths.
+        Traverses a directory to map human-readable primitive names to absolute paths.
         """
         results: Dict[str, str] = {}
         if directory.exists():
@@ -32,12 +33,12 @@ class PrimitivesManager:
 
     @classmethod
     def get_2d_paths(cls) -> Dict[str, str]: 
-        """Returns a dictionary of all available 2D flat primitives."""
+        """Retrieves paths for all available 2D flat primitives."""
         return cls._scan_dir(cls.DIR_2D)
 
     @classmethod
     def get_3d_paths(cls) -> Dict[str, str]: 
-        """Returns a dictionary of all available 3D volumetric primitives."""
+        """Retrieves paths for all available 3D volumetric primitives."""
         return cls._scan_dir(cls.DIR_3D)
 
     @classmethod
@@ -49,13 +50,13 @@ class PrimitivesManager:
     def get_primitive(cls, name: str, is_2d: bool = False) -> Optional[Any]:
         """
         Retrieves the parsed BufferObject for a requested primitive.
-        Delegates the actual disk I/O and GPU upload to the ResourceManager.
+        Loads into VRAM on first request.
         """
         paths = cls.get_2d_paths() if is_2d else cls.get_3d_paths()
-        path = paths.get(name)
+        path_str = paths.get(name)
         
-        if path and os.path.exists(path):
-            models = ResourceManager.get_model(path)
+        if path_str and Path(path_str).exists():
+            models = ResourceManager.get_model(path_str)
             if models: 
                 return models[0] 
         return None
@@ -63,12 +64,12 @@ class PrimitivesManager:
     @classmethod
     def get_proxy(cls, filename: str) -> Optional[Any]:
         """
-        Retrieves the BufferObject for an editor-only proxy representation.
-        Proxies are typically wireframes or unlit solid icons representing invisible entities.
+        Retrieves the BufferObject for an editor-only proxy representation 
+        (e.g., Camera or Light wireframes).
         """
-        path = cls.get_proxy_path(filename)
-        if os.path.exists(path):
-            models = ResourceManager.get_model(path)
+        path_str = cls.get_proxy_path(filename)
+        if Path(path_str).exists():
+            models = ResourceManager.get_model(path_str)
             if models: 
                 return models[0]
         return None

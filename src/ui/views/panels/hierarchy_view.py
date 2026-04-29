@@ -19,6 +19,7 @@ class HierarchyPanelView(BasePanel):
     PANEL_DOCK_AREA = Qt.LeftDockWidgetArea
 
     def setup_ui(self) -> None:
+        """Initializes the layout and custom Tree Widget."""
         self.layout = QVBoxLayout(self)
         self.layout.setContentsMargins(0, 0, 0, 0)
         
@@ -38,6 +39,7 @@ class HierarchyPanelView(BasePanel):
         self._is_updating_externally: bool = False
 
     def bind_events(self) -> None:
+        """Wires up local UI signals to event handlers."""
         self.tree_widget.itemSelectionChanged.connect(self._on_selection_changed)
         self.tree_widget.itemChanged.connect(self._on_item_changed)
         self.tree_widget.setContextMenuPolicy(Qt.CustomContextMenu)
@@ -74,6 +76,7 @@ class HierarchyPanelView(BasePanel):
         return super().eventFilter(obj, event)
 
     def keyPressEvent(self, e: QKeyEvent) -> None:
+        """Binds standard keyboard shortcuts (Copy, Cut, Paste, Delete)."""
         if not self._controller:
             super().keyPressEvent(e)
             return
@@ -92,6 +95,7 @@ class HierarchyPanelView(BasePanel):
             super().keyPressEvent(e)
 
     def _on_selection_changed(self) -> None:
+        """Notifies the Controller when the user clicks an entity node."""
         if not self._controller: 
             return
         if self._is_updating_externally:
@@ -131,6 +135,7 @@ class HierarchyPanelView(BasePanel):
             self._controller.handle_rename(ent_id, new_name)
 
     def _on_context_menu(self, pos: QPoint) -> None:
+        """Spawns the right-click contextual menu via the Controller."""
         if self._controller and hasattr(self._controller, 'show_context_menu'):
             global_pos = self.tree_widget.mapToGlobal(pos)
             self._controller.show_context_menu(global_pos)
@@ -140,7 +145,10 @@ class HierarchyPanelView(BasePanel):
     # =========================================================================
 
     def build_tree(self, entities_data: List[Dict[str, Any]], selected_idx: int) -> None:
-        """Reconstructs the hierarchical tree representation based on backend state."""
+        """
+        Reconstructs the hierarchical tree representation based on backend state.
+        Maintains expanded states and selection dynamically.
+        """
         self._is_updating_externally = True
         self.tree_widget.blockSignals(True)
         

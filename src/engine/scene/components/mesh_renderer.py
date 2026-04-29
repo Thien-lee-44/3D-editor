@@ -1,9 +1,17 @@
+"""
+Mesh Renderer Component.
+
+Couples raw geometric vertex data (BufferObject) with surface physical properties (Material).
+Serves as the primary identifier for objects meant to be pushed into the render queue.
+"""
+
 import os
 import glm
 from typing import Dict, Any, Optional
+import copy
+
 from src.engine.scene.entity import Component
 from src.engine.graphics.material import Material
-
 from src.app.config import (
     DEFAULT_MATH_RANGE, DEFAULT_MATH_RESOLUTION,
     DEFAULT_MAT_AMBIENT, DEFAULT_MAT_DIFFUSE, DEFAULT_MAT_SPECULAR, 
@@ -12,10 +20,10 @@ from src.app.config import (
     DEFAULT_MAT_SPEC_STRENGTH
 )
 
+
 class MeshRenderer(Component):
     """
-    Couples raw geometric vertex data (BufferObject) with surface physical properties (Material).
-    Serves as the primary identifier for objects meant to be pushed into the rendering pipeline.
+    Manages the rendering state for an entity, including visibility and mesh bindings.
     """
     
     def __init__(self) -> None:
@@ -29,11 +37,9 @@ class MeshRenderer(Component):
 
     def __deepcopy__(self, memo: dict) -> 'MeshRenderer':
         """
-        Custom deep clone implementation required for prefab instantiation.
-        Ensures materials are duplicated uniquely while Geometry pointers (BufferObjects) 
-        can be shared across instances to save VRAM.
+        Deep clone implementation required for prefab instantiation.
+        Duplicates materials uniquely but shares geometry pointers to save VRAM.
         """
-        import copy
         new_obj = type(self)()
         memo[id(self)] = new_obj
         
@@ -45,19 +51,14 @@ class MeshRenderer(Component):
         return new_obj
 
     def to_dict(self) -> Dict[str, Any]:
-        """
-        Serializes mesh references and material configuration.
-        Implements strict Geometry Type routing to survive Undo/Redo JSON serialization.
-        """
+        """Serializes geometry routes and material properties."""
         data = {
             "visible": self.visible, 
-            "is_proxy": getattr(self, 'is_proxy', False)
+            "is_proxy": getattr(self, 'is_proxy', False),
+            "geom_type": "none"
         }
         
-        # =====================================================================
-        # 1. ROBUST GEOMETRY ORIGIN SERIALIZATION
-        # =====================================================================
-        data["geom_type"] = "none"
+        # Route Geometry Types
         if self.geometry:
             geom_name = getattr(self.geometry, 'name', '')
             
@@ -78,16 +79,11 @@ class MeshRenderer(Component):
                 data["geometry_path"] = self.geometry.filepath
                 data["submesh_name"] = geom_name
                 
-            elif geom_name in ["Cube", "Sphere", "Cylinder", "Cone", "Plane", "Quad", "Torus", "Grid"]:
-                data["geom_type"] = "primitive"
-                data["primitive_name"] = geom_name
             else:
                 data["geom_type"] = "primitive"
                 data["primitive_name"] = geom_name or "Cube"
 
-        # =====================================================================
-        # 2. MATERIAL STATE SERIALIZATION (Golden Rule Names)
-        # =====================================================================
+        # Serialize Material Configuration
         mat = self.material
         data["mat_use_advanced_mode"] = getattr(mat, 'use_advanced_mode', False)
         data["mat_ambient_strength"] = float(getattr(mat, 'ambient_strength', DEFAULT_MAT_AMB_STRENGTH))
@@ -107,25 +103,19 @@ class MeshRenderer(Component):
         return data
 
     def from_dict(self, data: Dict[str, Any]) -> None:
-        """
-        Deserializes layout configurations and dynamically requests the ResourceManager 
-        to rebuild missing geometry/texture objects into VRAM.
-        """
+        """Deserializes configurations and requests asset restitution from the ResourceManager."""
+        # Inline imports to prevent circular dependencies during boot
         from src.engine.geometry.primitives import PrimitivesManager
         
         self.visible = bool(data.get("visible", True))
         self.is_proxy = bool(data.get("is_proxy", False))
         
-        # =====================================================================
-        # 1. ROBUST GEOMETRY RESTITUTION
-        # =====================================================================
         geom_type = data.get("geom_type", "none")
 
         if geom_type == "model":
             path = data.get("geometry_path", "")
             sub_name = data.get("submesh_name", "")
             if os.path.exists(path):
-                # Retrieve from VRAM Cache rather than re-uploading
                 from src.engine.resources.resource_manager import ResourceManager
                 mesh_list = ResourceManager.get_model(path)
                 if mesh_list:
@@ -133,9 +123,7 @@ class MeshRenderer(Component):
         
         elif geom_type == "primitive":
             p_name = data.get("primitive_name", "Cube")
-            geom = PrimitivesManager.get_primitive(p_name, False)
-            if not geom: 
-                geom = PrimitivesManager.get_primitive(p_name, True)
+            geom = PrimitivesManager.get_primitive(p_name, False) or PrimitivesManager.get_primitive(p_name, True)
             self.geometry = geom
             
         elif geom_type == "math":
@@ -153,9 +141,6 @@ class MeshRenderer(Component):
             if path:
                 self.geometry = PrimitivesManager.get_proxy(os.path.basename(path))
 
-        # =====================================================================
-        # 2. MATERIAL RESTITUTION
-        # =====================================================================
         mat = self.material
         mat.use_advanced_mode = bool(data.get("mat_use_advanced_mode", False))
         mat.ambient_strength = float(data.get("mat_ambient_strength", DEFAULT_MAT_AMB_STRENGTH))

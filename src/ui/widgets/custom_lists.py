@@ -1,3 +1,10 @@
+"""
+Custom List and Tree Widgets.
+
+Provides specialized Qt list and tree views for asset management and 
+Scene Graph hierarchy visualization, supporting Drag-and-Drop and Context Menus.
+"""
+
 from PySide6.QtWidgets import (QListWidget, QListWidgetItem, QMenu, QMessageBox,
                                QTreeWidget, QTreeWidgetItem, QAbstractItemView)
 from PySide6.QtCore import Qt, QMimeData, QSize, QPoint
@@ -44,8 +51,10 @@ class AssetListWidget(QListWidget):
         return mime
 
     def _show_context_menu(self, pos: QPoint) -> None:
+        """Displays a right-click context menu for asset deletion."""
         item = self.itemAt(pos)
-        if not item: return
+        if not item: 
+            return
         
         path = item.data(Qt.UserRole)
         

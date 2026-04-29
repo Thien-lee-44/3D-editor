@@ -1,7 +1,14 @@
+"""
+Timeline View.
+
+Renders the Animation Timeline panel docked at the bottom of the editor.
+Features a professional NLE (Non-Linear Editor) layout.
+"""
+
+from typing import List, Dict, Any
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, 
                                QPushButton, QDoubleSpinBox, QLabel)
 from PySide6.QtCore import Qt
-from typing import List
 
 from src.ui.views.panels.base_panel import BasePanel
 from src.ui.widgets.timeline.timeline_track import TimelineTrackWidget
@@ -9,11 +16,13 @@ from src.ui.widgets.timeline.ruler_widget import RulerWidget
 from src.ui.widgets.timeline.track_header import TrackHeaderWidget
 from src.app.config import DEFAULT_UI_MARGIN, DEFAULT_UI_SPACING
 
+
 class TimelinePanelView(BasePanel):
     """
     Global Timeline Panel docked at the bottom of the editor.
-    Features a professional NLE (Non-Linear Editor) layout with separated headers, rulers, and tracks.
+    Assembles separated headers, rulers, and interactive tracks.
     """
+    
     PANEL_TITLE = "Animation Timeline"
     PANEL_DOCK_AREA = Qt.BottomDockWidgetArea
     PANEL_MIN_HEIGHT = 160
@@ -27,6 +36,7 @@ class TimelinePanelView(BasePanel):
         self._build_nle_layout()
 
     def _build_top_controls(self) -> None:
+        """Constructs the playback and keyframe operation toolbars."""
         layout = QHBoxLayout()
         
         self.btn_rewind = QPushButton("|<")
@@ -50,7 +60,6 @@ class TimelinePanelView(BasePanel):
         
         layout.addWidget(self.btn_add_key)
         layout.addWidget(self.btn_clear_key)
-        
         layout.addStretch()
         
         self.spn_time = QDoubleSpinBox()
@@ -73,6 +82,7 @@ class TimelinePanelView(BasePanel):
         
         self.main_layout.addLayout(layout)
 
+        # Attach standard UI events
         self.btn_play.clicked.connect(self._request_play_toggle)
         self.btn_rewind.clicked.connect(self._request_rewind)
         self.btn_add_key.clicked.connect(self._request_add_key)
@@ -81,6 +91,7 @@ class TimelinePanelView(BasePanel):
         self.spn_max_time.valueChanged.connect(self._on_max_time_changed)
 
     def _build_nle_layout(self) -> None:
+        """Constructs the Non-Linear Editor body featuring the Ruler and Tracks."""
         nle_layout = QHBoxLayout()
         nle_layout.setSpacing(2)
         
@@ -138,7 +149,7 @@ class TimelinePanelView(BasePanel):
         self.ruler.set_max_time(val)
         self.track.set_max_time(val)
 
-    def _on_kfs_mutated(self, payload: dict) -> None:
+    def _on_kfs_mutated(self, payload: Dict[str, Any]) -> None:
         if self._controller:
             self._controller.mutate_keyframes(payload)
 
@@ -151,10 +162,12 @@ class TimelinePanelView(BasePanel):
     # =========================================================================
 
     def deselect_keyframe_ui(self) -> None:
+        """Clears focus highlights from the track visualizer."""
         self.track.selected_indices.clear()
         self.track.update()
 
     def update_ui_time(self, time_sec: float) -> None:
+        """Pushes the current playhead timestamp down into the Ruler and Tracker."""
         if self._controller:
             self._controller.is_updating_ui = True
             
@@ -171,6 +184,7 @@ class TimelinePanelView(BasePanel):
             self._controller.is_updating_ui = False
 
     def update_keyframes_display(self, kf_times: List[float], entity_name: str = "") -> None:
+        """Redraws the physical keyframe diamond markers on the NLE track."""
         self.track.set_keyframes(kf_times)
         if entity_name:
             self.track_header.set_target_name(entity_name)

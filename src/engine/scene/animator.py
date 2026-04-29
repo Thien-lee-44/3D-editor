@@ -1,11 +1,24 @@
-import glm
+"""
+Animator System.
+
+Mathematical interpolator evaluating animation states dynamically across entities.
+Operates strictly on Keyframe data provided by the AnimationComponent.
+"""
+
 import os
+import glm
 from typing import Any, Dict
+
 from src.engine.scene.scene import Scene
 from src.engine.scene.components import TransformComponent, MeshRenderer, LightComponent, CameraComponent
 from src.engine.scene.components.animation_cmp import AnimationComponent, Keyframe
 from src.engine.resources.resource_manager import ResourceManager
-from src.app.config import TEXTURE_CHANNELS
+from src.app.config import (
+    TEXTURE_CHANNELS, 
+    DEFAULT_CAMERA_FOV, 
+    DEFAULT_CAMERA_NEAR, 
+    DEFAULT_CAMERA_FAR
+)
 
 COMP_MAP = {
     "Transform": TransformComponent,
@@ -15,21 +28,27 @@ COMP_MAP = {
 }
 TEXTURE_MAP_ATTRS = tuple(TEXTURE_CHANNELS.values())
 
+
 class AnimatorSystem:
     """
-    Mathematical interpolator evaluating animation states dynamically across entities.
-    Operates strictly on Keyframe data provided by the AnimationComponent.
+    Calculates and applies interpolated component states during the render loop
+    based on the active timeline and keyframe configuration.
     """
     def __init__(self, scene: Scene) -> None:
         self.scene = scene
         self._last_eval_time = -1.0 
 
     def evaluate(self, global_time: float, dt: float, target_entity_id: int = -1) -> None:
+        """
+        Iterates through the Scene Graph and updates physical component states 
+        by interpolating between keyframes based on the current global time.
+        """
         if not self.scene: 
             return
 
         if dt == 0.0 and getattr(self, '_last_eval_time', -1.0) == global_time and target_entity_id == -1:
             return
+            
         self._last_eval_time = global_time
 
         for i, ent in enumerate(self.scene.entities):
@@ -46,8 +65,6 @@ class AnimatorSystem:
 
             if anim.keyframes:
                 if len(anim.keyframes) == 1:
-                    # Two-way synchronization: For un-animated entities (only base state exists),
-                    # push the live component state back to the keyframe to prevent snap-back.
                     self._sync_base_keyframe_from_component(anim.keyframes[0], ent)
                 else:
                     self._process_keyframes(anim, ent, global_time)
@@ -72,7 +89,7 @@ class AnimatorSystem:
         """
         Maintains a continuous live-to-keyframe sync for static entities.
         Ensures that free-flight camera movements or gizmo drags map directly 
-        into the base state automatically.
+        into the base state automatically to prevent snap-back phenomena.
         """
         tf = ent.get_component(TransformComponent)
         if tf and "Transform" in kf.state:
@@ -89,12 +106,13 @@ class AnimatorSystem:
 
         cam = ent.get_component(CameraComponent)
         if cam and "Camera" in kf.state:
-            kf.state["Camera"]["fov"] = float(getattr(cam, 'fov', 45.0))
+            kf.state["Camera"]["fov"] = float(getattr(cam, 'fov', DEFAULT_CAMERA_FOV))
             kf.state["Camera"]["ortho_size"] = float(getattr(cam, 'ortho_size', 5.0))
-            kf.state["Camera"]["near"] = float(getattr(cam, 'near', 0.1))
-            kf.state["Camera"]["far"] = float(getattr(cam, 'far', 100.0))
+            kf.state["Camera"]["near"] = float(getattr(cam, 'near', DEFAULT_CAMERA_NEAR))
+            kf.state["Camera"]["far"] = float(getattr(cam, 'far', DEFAULT_CAMERA_FAR))
 
     def _process_keyframes(self, anim: AnimationComponent, ent: Any, global_time: float) -> None:
+        """Determines the appropriate keyframe window and triggers interpolation."""
         eval_time = global_time
         first_kf = anim.keyframes[0]
         last_kf = anim.keyframes[-1]
@@ -119,6 +137,7 @@ class AnimatorSystem:
         self._interpolate_keyframes(kf_start, kf_end, eval_time, ent)
 
     def _interpolate_keyframes(self, kf_start: Keyframe, kf_end: Keyframe, eval_time: float, ent: Any) -> None:
+        """Executes linear or spherical interpolation (SLERP) across component data vectors."""
         time_diff = kf_end.time - kf_start.time
         t = 1.0 if time_diff <= 0.0 else max(0.0, min(1.0, (eval_time - kf_start.time) / time_diff))
 
@@ -138,7 +157,6 @@ class AnimatorSystem:
 
                 val2 = props2.get(prop_name, val1)
                 new_val = self._calculate_interpolated_value(comp_name, prop_name, val1, val2, t)
-                
                 self._apply_property(comp, comp_name, prop_name, new_val)
                 
             self._post_process_component(comp, comp_name, props1)

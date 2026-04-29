@@ -1,4 +1,12 @@
-from typing import Any, Dict
+"""
+Animation & Keyframe Widget.
+
+Provides the Inspector UI for managing entity animation tracks.
+Supports real-time keyframe time adjustment, playback looping, 
+and bulk duplication of keyframe ranges.
+"""
+
+from typing import Any, Dict, List, Optional
 from PySide6.QtWidgets import (QFormLayout, QLabel, QPushButton, QHBoxLayout, 
                                QVBoxLayout, QCheckBox, QWidget, QFrame, 
                                QDoubleSpinBox, QComboBox, QMessageBox)
@@ -6,10 +14,17 @@ from PySide6.QtCore import Qt
 
 from src.ui.widgets.inspector.base_widget import BaseComponentWidget
 
+
 class AnimationWidget(BaseComponentWidget):
+    """
+    Inspector widget dedicated to animation timeline control per entity.
+    Features a dynamic keyframe list and tools for sequence duplication.
+    """
+
     def __init__(self, controller: Any) -> None:
         super().__init__("Animation & Keyframes", controller)
         
+        # --- Active Keyframe Editor Header ---
         self.kf_frame = QFrame()
         kf_layout = QHBoxLayout(self.kf_frame)
         kf_layout.setContentsMargins(8, 6, 8, 6)
@@ -19,10 +34,8 @@ class AnimationWidget(BaseComponentWidget):
         self.spn_kf_time.setStyleSheet("border: 1px solid #777; background: #222; border-radius: 2px; color: white;")
         self.spn_kf_time.setRange(0.0, 3600.0)
         self.spn_kf_time.setDecimals(2)
-        
         self.spn_kf_time.setSingleStep(0.1)
         self.spn_kf_time.setKeyboardTracking(False)
-        
         self.spn_kf_time.setSuffix(" s")
         self.spn_kf_time.valueChanged.connect(self._on_kf_time_changed)
         
@@ -32,6 +45,7 @@ class AnimationWidget(BaseComponentWidget):
         kf_layout.addWidget(self.spn_kf_time)
         self.layout.addWidget(self.kf_frame)
 
+        # --- Global Animation Settings ---
         form = QFormLayout()
         form.setContentsMargins(0, 5, 0, 5)
 
@@ -45,11 +59,13 @@ class AnimationWidget(BaseComponentWidget):
 
         self.layout.addLayout(form)
         
+        # --- Dynamic Keyframe List ---
         self.kf_container = QVBoxLayout()
         self.kf_container.setSpacing(2)
         self.kf_container.setContentsMargins(0, 5, 0, 0)
         self.layout.addLayout(self.kf_container)
 
+        # --- Range Duplication Utility ---
         copy_group = QWidget()
         copy_layout = QVBoxLayout(copy_group)
         copy_layout.setContentsMargins(0, 15, 0, 0)
@@ -87,13 +103,19 @@ class AnimationWidget(BaseComponentWidget):
         self.layout.addWidget(copy_group)
 
     def _on_kf_time_changed(self, val: float) -> None:
+        """Notifies the controller to shift the timestamp of the focused keyframe."""
         if self._controller and self.kf_frame.isVisible():
             if hasattr(self._controller, 'set_active_keyframe_time'):
                 self._controller.set_active_keyframe_time(val)
 
     def update_data(self, data: Dict[str, Any]) -> None:
+        """
+        Synchronizes the UI state with the backend animation component.
+        Dynamically rebuilds the keyframe button list if timestamps have shifted.
+        """
         kf_idx = data.get("active_keyframe_index", -1)
         
+        # --- UI State Styling Based on Selection Focus ---
         if kf_idx == 0:
             self.kf_frame.setStyleSheet("""
                 QFrame { background-color: #4A2B00; border: 1px solid #FFA500; border-radius: 4px; }
@@ -135,12 +157,14 @@ class AnimationWidget(BaseComponentWidget):
         duration = keyframes[-1].get("time", 0.0) if keyframes else 0.0
         self.lbl_duration.setText(f"{duration:.2f} s")
         
+        # Optimization: Only rebuild the list if the animation structure changed
         kf_signature = f"idx:{kf_idx}-" + "-".join([f"{k.get('time', 0.0):.2f}" for k in keyframes])
         if getattr(self, "_last_kf_sig", "") == kf_signature:
             return 
             
         self._last_kf_sig = kf_signature
         
+        # Clear existing list
         while self.kf_container.count():
             item = self.kf_container.takeAt(0)
             if item.widget():
@@ -155,6 +179,7 @@ class AnimationWidget(BaseComponentWidget):
             self.cmb_copy_start.addItem("No Keyframes", -1)
             self.cmb_copy_end.addItem("No Keyframes", -1)
                 
+        # Generate interactive keyframe rows
         for i, kf in enumerate(keyframes):
             t = kf.get('time', 0.0)
             
@@ -200,19 +225,27 @@ class AnimationWidget(BaseComponentWidget):
         self.cmb_copy_end.blockSignals(False)
             
     def _select_kf(self, idx: int) -> None:
+        """Informs the controller to focus the playhead on a specific keyframe index."""
         if self._controller and hasattr(self._controller, 'select_keyframe_from_inspector'):
             self._controller.select_keyframe_from_inspector(idx)
             
     def _on_loop_toggled(self, checked: bool) -> None:
+        """Toggles the cyclic playback property."""
         if self._controller:
             self._controller.set_properties("Animation", {"loop": checked})
             
     def _remove_kf(self, idx: int) -> None:
+        """Requests the deletion of a targeted keyframe track."""
         if self._controller and hasattr(self._controller, 'remove_keyframe'):
             self._controller.remove_keyframe(idx)
 
     def apply_copy_range(self) -> None:
-        if not self._controller: return
+        """
+        Gathers range duplication parameters and dispatches a MUTATE_KEYFRAMES command.
+        Ensures logical order of indices before transmission.
+        """
+        if not self._controller: 
+            return
         
         start_idx = self.cmb_copy_start.currentData()
         end_idx = self.cmb_copy_end.currentData()
@@ -228,7 +261,7 @@ class AnimationWidget(BaseComponentWidget):
         
         self.request_undo_snapshot()
         
-        # Đã bọc lệnh DUPLICATE_KEYFRAME_RANGE vào bên trong MUTATE_KEYFRAMES để Engine nhận diện đúng
+        # Wrapped duplication command inside MUTATE_KEYFRAMES for standard Engine resolution
         payload = {
             "MUTATE_KEYFRAMES": {
                 "mode": "DUPLICATE_KEYFRAME_RANGE",

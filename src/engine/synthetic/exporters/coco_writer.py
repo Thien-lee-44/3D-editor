@@ -1,3 +1,10 @@
+"""
+COCO Dataset Format Exporter.
+
+Aggregates frame annotations and exports a single COCO JSON file.
+Complies with the standard Common Objects in Context (COCO) specifications.
+"""
+
 import json
 from datetime import datetime
 from pathlib import Path
@@ -5,9 +12,7 @@ from typing import Any, Dict, Iterable, List
 
 
 class COCOWriter:
-    """
-    Aggregates frame annotations and exports a single COCO JSON file.
-    """
+    """Maintains COCO state across multiple frames and flushes to a single JSON payload."""
 
     def __init__(self, output_path: Path, categories: Dict[int, Any]) -> None:
         self.output_path = Path(output_path)
@@ -20,6 +25,7 @@ class COCOWriter:
 
     @staticmethod
     def _normalize_categories(categories: Dict[int, Any]) -> List[Dict[str, Any]]:
+        """Formats semantic classes into the COCO category schema."""
         normalized: List[Dict[str, Any]] = []
 
         for raw_id, raw_info in sorted(categories.items(), key=lambda item: int(item[0])):
@@ -48,6 +54,7 @@ class COCOWriter:
         height: int,
         objects: Iterable[Dict[str, Any]],
     ) -> None:
+        """Registers a single image frame and all of its associated object bounds."""
         image_id = frame_index + 1
 
         self.images.append(
@@ -67,6 +74,7 @@ class COCOWriter:
             xmin, ymin, xmax, ymax = [float(v) for v in bbox_xyxy]
             box_w = max(0.0, xmax - xmin)
             box_h = max(0.0, ymax - ymin)
+            
             if box_w <= 0.0 or box_h <= 0.0:
                 continue
 
@@ -100,6 +108,7 @@ class COCOWriter:
             self._next_annotation_id += 1
 
     def flush(self) -> None:
+        """Writes the accumulated COCO dataset payload to disk."""
         payload = {
             "info": {
                 "description": "Synthetic dataset exported from BTL2 generator",

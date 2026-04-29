@@ -1,12 +1,16 @@
+"""
+Pascal VOC Format Exporter.
+
+Exports object detection annotations in the standard XML format used by Pascal VOC.
+"""
+
 from pathlib import Path
 from typing import Any, Dict, Iterable
 import xml.etree.ElementTree as ET
 
 
 class VOCWriter:
-    """
-    Exports Pascal VOC XML annotations for object detection.
-    """
+    """Generates Pascal VOC XML annotations."""
 
     @staticmethod
     def export(
@@ -17,6 +21,17 @@ class VOCWriter:
         objects: Iterable[Dict[str, Any]],
         depth: int = 3,
     ) -> None:
+        """
+        Serializes detected object bounding boxes into a formatted XML file.
+        
+        Args:
+            filepath: Destination file path (.xml).
+            image_file: The relative or absolute path to the corresponding image file.
+            width: Width of the associated image.
+            height: Height of the associated image.
+            objects: Iterable of objects containing 'bbox_xyxy' and 'class_name'/'class_id'.
+            depth: Number of color channels in the image (default is 3 for RGB).
+        """
         output_path = Path(filepath)
         output_path.parent.mkdir(parents=True, exist_ok=True)
 

@@ -1,3 +1,10 @@
+"""
+Metadata Aggregator and Exporter.
+
+Writes structured scene metadata for each generated frame.
+Outputs data simultaneously into JSON, NDJSON (streaming), and CSV formats.
+"""
+
 import csv
 import json
 from pathlib import Path
@@ -5,9 +12,7 @@ from typing import Any, Dict, List
 
 
 class MetadataWriter:
-    """
-    Writes structured scene metadata for each generated frame.
-    """
+    """Collects rendering metrics and exports comprehensive frame annotations."""
 
     def __init__(self, output_dir: Path) -> None:
         self.output_dir = Path(output_dir)
@@ -17,6 +22,7 @@ class MetadataWriter:
         self._object_rows: List[Dict[str, Any]] = []
 
     def add_frame(self, frame_record: Dict[str, Any]) -> None:
+        """Appends a single frame's metadata to the internal buffer."""
         self._frames.append(frame_record)
 
         frame_index = int(frame_record.get("frame_index", -1))
@@ -51,6 +57,7 @@ class MetadataWriter:
             )
 
     def flush(self) -> None:
+        """Dumps all buffered metadata to disk in JSON, NDJSON, and CSV formats."""
         json_path = self.output_dir / "frames.json"
         ndjson_path = self.output_dir / "frames.ndjson"
         csv_path = self.output_dir / "objects.csv"

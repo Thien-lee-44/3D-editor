@@ -1,5 +1,13 @@
-from PySide6.QtWidgets import QWidget
+"""
+Base View.
+
+Provides the abstract foundational class for all UI Views within the 
+Model-View-Controller (MVC) architecture.
+"""
+
 from typing import Any, Optional
+from PySide6.QtWidgets import QWidget
+
 
 class BaseView(QWidget):
     """
@@ -7,6 +15,7 @@ class BaseView(QWidget):
     Views are 'dumb'; they do not contain engine logic. They only render UI 
     and report user interactions back to their Controller.
     """
+    
     def __init__(self, controller: Optional[Any] = None, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self._controller = controller

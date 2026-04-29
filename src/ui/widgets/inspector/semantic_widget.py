@@ -120,6 +120,8 @@ class SemanticWidget(BaseComponentWidget):
             if class_id is not None:
                 self.request_undo_snapshot()
                 self._controller.set_properties("Semantic", {"class_id": class_id})
+                classes = self._controller.get_semantic_classes()
+                self.update_data({"class_id": class_id})
 
     def add_new_class(self) -> None:
         if not self._controller: return
@@ -140,6 +142,7 @@ class SemanticWidget(BaseComponentWidget):
         if color.isValid():
             rgb = [color.red() / 255.0, color.green() / 255.0, color.blue() / 255.0]
             self._controller.update_semantic_class_color(class_id, rgb)
+            self.update_data({"class_id": class_id})
 
     def remove_current_class(self) -> None:
         if not self._controller: return

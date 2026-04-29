@@ -1,23 +1,29 @@
+"""
+YOLO Format Exporter.
+
+Serializes object data into standard YOLO dataset formats.
+Dynamically supports both Object Detection (Center Bounding Box) 
+and Instance Segmentation (Polygon Contours).
+Enforces strict domain normalization [0.0, 1.0] and spatial validation.
+"""
+
 from typing import List, Dict, Any
 
+
 class YOLOWriter:
-    """
-    Serializes object data into standard YOLO dataset formats.
-    Dynamically supports both Object Detection (Center Bounding Box) 
-    and Instance Segmentation (Polygon Contours).
-    Enforces strict domain normalization [0.0, 1.0] and spatial validation.
-    """
+    """Handles writing bounding box and segmentation data to YOLO .txt format."""
 
     @staticmethod
     def export(filepath: str, objects: List[Dict[str, Any]], img_w: int, img_h: int, is_segmentation: bool = False) -> None:
         """
         Exports a YOLO annotation file.
         
-        :param filepath: Destination file path (.txt).
-        :param objects: List of detected objects containing 'class_id', 'bbox_xyxy', and optionally 'segmentation'.
-        :param img_w: Source image width for normalization.
-        :param img_h: Source image height for normalization.
-        :param is_segmentation: Toggles export mode between Segmentation (Polygons) and Detection (BBoxes).
+        Args:
+            filepath: Destination file path (.txt).
+            objects: List of detected objects containing 'class_id', 'bbox_xyxy', and optionally 'segmentation'.
+            img_w: Source image width for normalization.
+            img_h: Source image height for normalization.
+            is_segmentation: Toggles export mode between Segmentation (Polygons) and Detection (BBoxes).
         """
         lines = []
         
