@@ -85,7 +85,7 @@ pip install -r requirements.txt
 python run.py
 ```
 
-## BTL2 Synthetic Export Outputs
+## Synthetic Export Outputs
 
 The generator now exports all core artifacts expected by BTL2:
 
