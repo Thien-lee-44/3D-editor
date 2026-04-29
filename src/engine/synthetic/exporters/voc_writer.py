@@ -41,7 +41,7 @@ class VOCWriter:
         ET.SubElement(annotation, "path").text = str(image_file)
 
         source = ET.SubElement(annotation, "source")
-        ET.SubElement(source, "database").text = "Synthetic BTL2"
+        ET.SubElement(source, "database").text = "Synthetic"
 
         size = ET.SubElement(annotation, "size")
         ET.SubElement(size, "width").text = str(int(width))

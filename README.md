@@ -42,7 +42,7 @@ At its core, the engine is driven by a strict Entity-Component System (ECS) arch
 ## Synthetic Data Engine & AI Benchmarking
 
 ### Synthetic Export Outputs
-The generator exports all core artifacts expected by modern Computer Vision standards (BTL2):
+The generator exports all core artifacts expected by modern Computer Vision standards:
 - `images/*.jpg` (RGB frames)
 - `depth/*.png` and `depth/*.npy` (Depth map visualization + raw depth array)
 - `masks/instance/*.png` and `masks/semantic/*.png`
@@ -87,7 +87,7 @@ python run.py
 
 ## Synthetic Export Outputs
 
-The generator now exports all core artifacts expected by BTL2:
+The generator now exports all core artifacts:
 
 - `images/*.jpg` (RGB frames)
 - `depth/*.png` and `depth/*.npy` (depth map visualization + raw depth array)

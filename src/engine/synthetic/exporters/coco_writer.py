@@ -111,7 +111,7 @@ class COCOWriter:
         """Writes the accumulated COCO dataset payload to disk."""
         payload = {
             "info": {
-                "description": "Synthetic dataset exported from BTL2 generator",
+                "description": "Synthetic dataset exported from generator",
                 "version": "1.0",
                 "year": datetime.now().year,
                 "date_created": datetime.now().isoformat(timespec="seconds"),
