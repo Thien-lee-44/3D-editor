@@ -1,9 +1,15 @@
+"""
+Main Viewport View.
+Serves as the primary 3D rendering canvas. Captures user inputs (Mouse, Keyboard, Drag & Drop)
+and routes them to the Viewport Controller while executing OpenGL lifecycle events.
+"""
+
 from PySide6.QtOpenGLWidgets import QOpenGLWidget
 from PySide6.QtCore import Qt
 from PySide6.QtGui import (QMouseEvent, QKeyEvent, QWheelEvent, 
                            QDragEnterEvent, QDragMoveEvent, QDropEvent, QFocusEvent, QCursor)
 from PySide6.QtWidgets import QLabel, QMessageBox, QMenu
-from typing import Any, Optional
+from typing import Any, Optional, Dict
 
 from src.app import ctx, AppEvent
 
@@ -13,8 +19,10 @@ from src.app.config import TEXTURE_CHANNELS, DEFAULT_BG_COLOR, VIEWPORT_HUD_STYL
 class MainViewportView(QOpenGLWidget):
     """
     Main 3D viewport (Dumb View).
-    Only responsible for calling OpenGL drawing functions and capturing peripheral events (Mouse, Keyboard).
+    Strictly responsible for executing OpenGL drawing functions and capturing 
+    peripheral events. Logic is completely deferred to the associated Controller.
     """
+    
     def __init__(self, controller: Any, parent: Optional[Any] = None) -> None:
         super().__init__(parent)
         self._controller = controller
@@ -22,7 +30,7 @@ class MainViewportView(QOpenGLWidget):
         self.setFocusPolicy(Qt.StrongFocus)
         self.setMouseTracking(True)
         self.setAcceptDrops(True)
-        self.bg_color = DEFAULT_BG_COLOR 
+        self.bg_color: tuple = DEFAULT_BG_COLOR 
         
         # Labels for displaying X, Y, Z axes on the screen (HUD)
         self.lbl_x = QLabel("X", self)
@@ -31,7 +39,8 @@ class MainViewportView(QOpenGLWidget):
         self.lbl_nx = QLabel("-X", self)
         self.lbl_ny = QLabel("-Y", self)
         self.lbl_nz = QLabel("-Z", self)
-        self.labels_dict = {
+        
+        self.labels_dict: Dict[str, QLabel] = {
             'X': self.lbl_x, 'Y': self.lbl_y, 'Z': self.lbl_z, 
             '-X': self.lbl_nx, '-Y': self.lbl_ny, '-Z': self.lbl_nz
         }
@@ -41,9 +50,11 @@ class MainViewportView(QOpenGLWidget):
     # =========================================================================
 
     def initializeGL(self) -> None:
+        """Called once by Qt to set up the initial OpenGL state."""
         ctx.engine.init_viewport_gl()
 
     def resizeGL(self, w: int, h: int) -> None: 
+        """Called by Qt whenever the widget is resized."""
         ctx.engine.resize_gl(w, h)
 
     def paintGL(self) -> None:
@@ -57,18 +68,24 @@ class MainViewportView(QOpenGLWidget):
             active_axis, hovered_axis, hovered_screen_axis
         )
         
+        # Reset and reposition HUD orientation labels
         for lbl in self.labels_dict.values(): 
             lbl.hide()
             
         for data in ctx.engine.get_screen_axis_labels_data(self.width(), self.height()):
             lbl = self.labels_dict[data['name']]
+            
             if hovered_screen_axis and lbl.text() == hovered_screen_axis: 
                 lbl.setStyleSheet("color: #ffff00; font-weight: bold; background: transparent;")
             else:
-                if lbl == self.lbl_x: lbl.setStyleSheet("color: #ff3333; font-weight: bold; background: transparent;")
-                elif lbl == self.lbl_y: lbl.setStyleSheet("color: #33ff33; font-weight: bold; background: transparent;")
-                elif lbl == self.lbl_z: lbl.setStyleSheet("color: #3388ff; font-weight: bold; background: transparent;")
-                else: lbl.setStyleSheet(VIEWPORT_HUD_STYLE)
+                if lbl == self.lbl_x: 
+                    lbl.setStyleSheet("color: #ff3333; font-weight: bold; background: transparent;")
+                elif lbl == self.lbl_y: 
+                    lbl.setStyleSheet("color: #33ff33; font-weight: bold; background: transparent;")
+                elif lbl == self.lbl_z: 
+                    lbl.setStyleSheet("color: #3388ff; font-weight: bold; background: transparent;")
+                else: 
+                    lbl.setStyleSheet(VIEWPORT_HUD_STYLE)
                 
             lbl.move(data['x'], data['y'])
             lbl.show()
@@ -125,6 +142,7 @@ class MainViewportView(QOpenGLWidget):
         ctx.events.emit(AppEvent.ENTITY_SELECTED, ctx.engine.get_selected_entity_id())
 
     def focusOutEvent(self, e: QFocusEvent) -> None:
+        """Clears active input state to prevent stuck key interactions when losing focus."""
         self._controller.clear_keys()
         super().focusOutEvent(e)
 
@@ -147,7 +165,8 @@ class MainViewportView(QOpenGLWidget):
     def dropEvent(self, e: QDropEvent) -> None:
         """Handles the event when the user drops an internal resource into the 3D viewport."""
         parts = e.mimeData().text().split("|", 1)
-        if len(parts) < 2: return
+        if len(parts) < 2: 
+            return
             
         asset_type, path = parts[0], parts[1]
         
@@ -185,7 +204,8 @@ class MainViewportView(QOpenGLWidget):
             action.setData(attr_name) 
             
         action_selected = menu.exec(QCursor.pos())
-        if not action_selected: return
+        if not action_selected: 
+            return
         
         map_attr = action_selected.data()
         self.window()._controller.asset_ctrl.apply_texture(path, map_attr)

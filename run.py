@@ -1,15 +1,16 @@
 """
 Application Entry Point.
-Configures the working directory and launches the application using the 'src' namespace.
+Configures the environment and bootstraps the main application process.
 """
+
 import os
 import sys
 from pathlib import Path
 
 def setup_environment() -> None:
     """
-    Anchors the working directory to the project root and ensures the root 
-    is in the Python path to resolve module imports consistently.
+    Resolves the project root and anchors the working directory to ensure
+    consistent module resolution across different execution contexts.
     """
     root_dir = Path(__file__).resolve().parent
     os.chdir(str(root_dir))
@@ -20,7 +21,5 @@ def setup_environment() -> None:
 if __name__ == "__main__":
     setup_environment()
     
-    # Standard Python 3 absolute import to prevent Module Aliasing
     from src.app.main import run_app
-    
     run_app()

@@ -1,3 +1,9 @@
+"""
+GLSL Shader Management.
+Handles the complete lifecycle of GLSL Shader Programs: from disk reading, 
+compilation, hardware linking, to runtime uniform injection.
+"""
+
 import os
 import glm
 from OpenGL.GL import *
@@ -7,8 +13,8 @@ from src.app.exceptions import ShaderError, ResourceError
 
 class Shader:
     """
-    Handles the complete lifecycle of GLSL Shader Programs: from disk reading, 
-    compilation, hardware linking, to runtime uniform injection.
+    Encapsulates an OpenGL Shader Program.
+    Provides a high-level API to transmit uniform data across the CPU-GPU boundary.
     """
     
     def __init__(self, vertex_path: str, fragment_path: str) -> None:
@@ -26,9 +32,9 @@ class Shader:
     def _compile_shaders(self, v_src: str, f_src: str) -> int:
         """
         Compiles individual shader stages and links them into an executable GPU program.
-        Raises explicit ShaderError exceptions to halt execution immediately upon syntax errors.
+        Raises explicit ShaderError exceptions to halt execution upon syntax errors.
         """
-        # Vertex Shader Compilation Pipeline
+        # --- Vertex Shader Compilation ---
         v_shader = glCreateShader(GL_VERTEX_SHADER)
         glShaderSource(v_shader, v_src)
         glCompileShader(v_shader)
@@ -37,7 +43,7 @@ class Shader:
             info_log = glGetShaderInfoLog(v_shader)
             raise ShaderError(f"VERTEX SHADER COMPILATION FAILED:\n{info_log.decode('utf-8')}")
         
-        # Fragment Shader Compilation Pipeline
+        # --- Fragment Shader Compilation ---
         f_shader = glCreateShader(GL_FRAGMENT_SHADER)
         glShaderSource(f_shader, f_src)
         glCompileShader(f_shader)
@@ -46,7 +52,7 @@ class Shader:
             info_log = glGetShaderInfoLog(f_shader)
             raise ShaderError(f"FRAGMENT SHADER COMPILATION FAILED:\n{info_log.decode('utf-8')}")
 
-        # Linking Stage
+        # --- Linking Stage ---
         prog = glCreateProgram()
         glAttachShader(prog, v_shader)
         glAttachShader(prog, f_shader)
@@ -56,7 +62,7 @@ class Shader:
             info_log = glGetProgramInfoLog(prog)
             raise ShaderError(f"SHADER PROGRAM LINKING FAILED:\n{info_log.decode('utf-8')}")
         
-        # Cleanup: Intermediate shader objects are no longer required after successful linking
+        # Cleanup intermediate shader objects
         glDeleteShader(v_shader)
         glDeleteShader(f_shader)
         
@@ -66,10 +72,7 @@ class Shader:
         """Activates the shader program in the current OpenGL context state machine."""
         glUseProgram(self.program)
 
-    # =========================================================================
-    # UNIFORM INJECTION API
-    # Handles data transmission across the CPU-GPU boundary.
-    # =========================================================================
+    # --- Uniform Injection API ---
     
     def set_mat4(self, name: str, mat: Any) -> None:
         """Transmits a 4x4 matrix (e.g., Model, View, Projection matrices)."""

@@ -1,3 +1,9 @@
+"""
+Sun HUD Widget.
+Provides a secondary, isolated 3D OpenGL viewport dedicated to manipulating 
+directional light (Sun) vectors via an interactive arcball interface.
+"""
+
 from PySide6.QtOpenGLWidgets import QOpenGLWidget
 from PySide6.QtWidgets import QWidget
 from PySide6.QtCore import Qt, QTimer
@@ -16,6 +22,7 @@ class SunHUDWidget(QOpenGLWidget):
     Operates completely independently of the main viewport, utilizing its own EventBus 
     and a dedicated ViewportController instantiated in 'HUD mode'.
     """
+    
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         
@@ -25,7 +32,8 @@ class SunHUDWidget(QOpenGLWidget):
         # Instantiate an isolated Controller specifically to capture interactions within this widget
         self._controller = ViewportController(is_hud=True)
         
-        # The HUD requires a constant framerate for continuous arcball redrawing (effectively unlocking the render loop)
+        # The HUD requires a constant framerate for continuous arcball redrawing 
+        # (effectively unlocking the render loop from the main application state)
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.update)
         hud_interval = max(1, int(1000 / max(TARGET_FPS, 1)))

@@ -1,8 +1,14 @@
-from typing import Any, List, Optional
+"""
+Base Component Widget.
+Provides shared layout structures, color conversion utilities, and snapshot hooks 
+for all specialized sub-widgets within the Inspector panel.
+"""
+
+from typing import Any, List, Optional, Callable, Tuple
 from PySide6.QtWidgets import QGroupBox, QVBoxLayout, QHBoxLayout, QPushButton, QColorDialog
 from PySide6.QtGui import QColor
 
-# Import from the new widgets directory
+# Import from the custom widgets directory
 from src.ui.widgets.custom_inputs import create_vec3_input
 
 # Import SSOT configuration
@@ -23,33 +29,31 @@ def rgb_to_hex(c_list: List[float]) -> str:
     
     return f"background-color: rgb({r},{g},{b}); {base_style}"
 
-def set_vec3_spinboxes(spinboxes: List[Any], values: List[float]) -> None:
-    """Silently updates a list of spinboxes without triggering their 'valueChanged' signals."""
-    for i in range(3):
-        spinboxes[i].blockSignals(True)
-        spinboxes[i].setValue(values[i])
-        spinboxes[i].blockSignals(False)
+def set_vec3_spinboxes(spins: List[Any], values: Tuple[float, float, float]) -> None:
+    """Updates a list of 3 QDoubleSpinBox widgets silently without emitting signals."""
+    for i, sp in enumerate(spins):
+        sp.blockSignals(True)
+        sp.setValue(values[i])
+        sp.blockSignals(False)
 
 class BaseComponentWidget(QGroupBox):
     """
-    Parent class for all modular UI panels within the Inspector.
-    Standardizes layout margins, title formatting, and color picking utility logic.
+    Abstract base container for Inspector panels.
+    Manages standardized layouts and integrates with the Undo/Redo tracking system.
     """
+    
     def __init__(self, title: str, controller: Any) -> None:
         super().__init__(title)
         self._controller = controller
         self.layout = QVBoxLayout(self)
-        
-        # Consistent vertical spacing across all inspector sub-panels
-        self.layout.setContentsMargins(5, 10, 5, 5)
-        self.setStyleSheet("QGroupBox { font-weight: bold; border: 1px solid #555; margin-top: 10px; } QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 3px; }")
+        self.layout.setSpacing(5)
 
     def request_undo_snapshot(self) -> None:
         """Shared function to request the Controller to snapshot the scene before the user modifies values."""
         if self._controller and hasattr(self._controller, 'request_undo_snapshot'):
             self._controller.request_undo_snapshot()
 
-    def _build_color_row(self, c_type: str, vec_callback: Any, btn_callback: Any) -> tuple:
+    def _build_color_row(self, c_type: str, vec_callback: Callable, btn_callback: Callable) -> Tuple[QHBoxLayout, QPushButton, List[Any]]:
         """Assembles a standardized row containing a Color Dialog Button paired with explicit RGB spinboxes."""
         row = QHBoxLayout()
         row.setContentsMargins(0, 0, 0, 0)
@@ -66,10 +70,10 @@ class BaseComponentWidget(QGroupBox):
     def _pick_color_with_dialog(self, current_c_list: List[float]) -> Optional[List[float]]:
         """Utility function to open the OS-native Qt color picker dialog."""
         r, g, b = [max(0, min(255, int(c * 255))) for c in current_c_list[:3]]
-        dialog = QColorDialog(self)
-        dialog.setCurrentColor(QColor(r, g, b))
         
-        if dialog.exec() == QColorDialog.Accepted:
-            color = dialog.currentColor()
+        # Open dialog synchronously
+        color = QColorDialog.getColor(QColor(r, g, b), self, "Select Color")
+        
+        if color.isValid():
             return [color.red() / 255.0, color.green() / 255.0, color.blue() / 255.0]
         return None

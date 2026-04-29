@@ -1,6 +1,12 @@
+"""
+Main Editor Window.
+Assembles all dockable panels, viewport canvas, toolbars, and menus into the 
+primary application interface.
+"""
+
 from PySide6.QtWidgets import (QMainWindow, QDockWidget, QWidget, QHBoxLayout, 
                                QRadioButton, QToolBar, QComboBox, QCheckBox, 
-                               QLabel, QFrame, QSpacerItem, QSizePolicy, 
+                               QLabel, QSpacerItem, QSizePolicy, 
                                QColorDialog, QMessageBox, QMenu)
 from PySide6.QtCore import Qt, QPoint
 from PySide6.QtGui import QKeySequence, QShortcut, QColor, QAction
@@ -9,13 +15,18 @@ from typing import Any, Optional
 from src.app import ctx, AppEvent
 
 # Import SSOT configuration
-from src.app.config import APP_TITLE, DEFAULT_WINDOW_SIZE, DEFAULT_BG_COLOR, RENDER_MODE_COMBINED, RENDER_MODE_FLAT
+from src.app.config import (
+    APP_TITLE, DEFAULT_WINDOW_SIZE, DEFAULT_BG_COLOR, 
+    RENDER_MODE_COMBINED, RENDER_MODE_FLAT
+)
+
 
 class EditorMainWindow(QMainWindow):
     """
     Shell interface of the application.
     Assembles Docks, ToolBars, MenuBars and binds buttons to the MainController.
     """
+    
     def __init__(self, controller: Any) -> None:
         super().__init__()
         self._controller = controller
@@ -41,10 +52,12 @@ class EditorMainWindow(QMainWindow):
         self.shortcut_redo.activated.connect(self._controller.project_ctrl.redo)
 
     def set_central_viewport(self, viewport_widget: QWidget) -> None:
+        """Assigns the 3D OpenGL viewport as the central widget."""
         self.gl_widget = viewport_widget
         self.setCentralWidget(self.gl_widget)
 
     def register_dock(self, panel_view: QWidget) -> None:
+        """Wraps a panel view in a QDockWidget and docks it to the main window."""
         title = getattr(panel_view, "PANEL_TITLE", "Panel")
         area = getattr(panel_view, "PANEL_DOCK_AREA", Qt.RightDockWidgetArea)
         
@@ -73,7 +86,8 @@ class EditorMainWindow(QMainWindow):
             return
             
         data = ctx.engine.get_selected_entity_data()
-        if not data: return
+        if not data: 
+            return
         
         # Unlock all
         self.rad_mov.setEnabled(True)
@@ -111,6 +125,7 @@ class EditorMainWindow(QMainWindow):
     # =========================================================================
 
     def create_menu_bar(self) -> None:
+        """Initializes the top application menu bar."""
         menubar = self.menuBar()
         
         menu_file = menubar.addMenu("File")
@@ -191,6 +206,7 @@ class EditorMainWindow(QMainWindow):
             )
 
     def show_context_menu(self, pos: QPoint) -> None:
+        """Builds and displays a dynamic context menu for scene interactions."""
         menu = QMenu(self)
         has_selection = (ctx.engine.get_selected_entity_id() >= 0)
         
@@ -274,6 +290,7 @@ class EditorMainWindow(QMainWindow):
     # =========================================================================
 
     def create_toolbar(self) -> None:
+        """Initializes the top layout containing tools and global render settings."""
         toolbar_tools = QToolBar("Transform Tools")
         toolbar_tools.setMovable(False)
         self.addToolBar(Qt.TopToolBarArea, toolbar_tools)
@@ -328,12 +345,15 @@ class EditorMainWindow(QMainWindow):
         self.w_comb_opts = QWidget()
         lay_comb = QHBoxLayout(self.w_comb_opts)
         lay_comb.setContentsMargins(0, 0, 0, 0)
+        
         self.chk_comb_light = QCheckBox("+Lighting")
         self.chk_comb_light.setChecked(True)
         self.chk_comb_light.stateChanged.connect(self._on_render_settings_changed)
+        
         self.chk_comb_tex = QCheckBox("+Textures")
         self.chk_comb_tex.setChecked(True)
         self.chk_comb_tex.stateChanged.connect(self._on_render_settings_changed)
+        
         self.chk_comb_vcolor = QCheckBox("+Vertex Colors")
         self.chk_comb_vcolor.setChecked(True)
         self.chk_comb_vcolor.stateChanged.connect(self._on_render_settings_changed)
@@ -352,11 +372,16 @@ class EditorMainWindow(QMainWindow):
         toolbar_view.addWidget(container)
 
     def _on_tool_changed(self) -> None:
-        if self.rad_rot.isChecked(): self._controller.set_manipulation_mode("ROTATE")
-        elif self.rad_mov.isChecked(): self._controller.set_manipulation_mode("MOVE")
-        elif self.rad_scl.isChecked(): self._controller.set_manipulation_mode("SCALE")
+        """Dispatches the selected Gizmo manipulation mode (Translate, Rotate, Scale)."""
+        if self.rad_rot.isChecked(): 
+            self._controller.set_manipulation_mode("ROTATE")
+        elif self.rad_mov.isChecked(): 
+            self._controller.set_manipulation_mode("MOVE")
+        elif self.rad_scl.isChecked(): 
+            self._controller.set_manipulation_mode("SCALE")
 
     def _on_render_settings_changed(self, *args: Any) -> None:
+        """Dispatches global shader and pipeline rendering configuration updates."""
         is_combined = (self.cmb_render.currentIndex() == 1)
         self.w_comb_opts.setVisible(is_combined)
         

@@ -1,9 +1,12 @@
+"""
+Light Component.
+Provides physical illumination parameters for the GLSL Forward Renderer.
+"""
+
 import glm
 import math
 from typing import Dict, Any
 from src.engine.scene.entity import Component
-
-# Import centralized configurations
 from src.app.config import (
     DEFAULT_LIGHT_COLOR, DEFAULT_LIGHT_INTENSITY, 
     DEFAULT_LIGHT_AMBIENT, DEFAULT_LIGHT_DIFFUSE, DEFAULT_LIGHT_SPECULAR,
@@ -13,8 +16,7 @@ from src.app.config import (
 
 class LightComponent(Component):
     """
-    Provides physical illumination parameters mapped directly to the GLSL Forward Renderer.
-    Contains mathematical abstractions like Cutoff angles for Spotlights.
+    Contains lighting abstractions such as attenuation and spotlight cutoffs.
     """
     
     def __init__(self, light_type: str = "Point") -> None:
@@ -24,18 +26,15 @@ class LightComponent(Component):
         self.intensity: float = DEFAULT_LIGHT_INTENSITY         
         self.use_advanced_mode: bool = False 
         
-        # Basic mode properties (Scalar multipliers against a base color)
-        self.color = glm.vec3(*DEFAULT_LIGHT_COLOR)
+        self.color: glm.vec3 = glm.vec3(*DEFAULT_LIGHT_COLOR)
         self.ambient_strength: float = DEFAULT_LIGHT_AMBIENT
         self.diffuse_strength: float = DEFAULT_LIGHT_DIFFUSE
         self.specular_strength: float = DEFAULT_LIGHT_SPECULAR
         
-        # Advanced mode properties (Independent RGB control per channel)
-        self.explicit_ambient = glm.vec3(*DEFAULT_LIGHT_COLOR)
-        self.explicit_diffuse = glm.vec3(*DEFAULT_LIGHT_COLOR)
-        self.explicit_specular = glm.vec3(*DEFAULT_LIGHT_COLOR)
+        self.explicit_ambient: glm.vec3 = glm.vec3(*DEFAULT_LIGHT_COLOR)
+        self.explicit_diffuse: glm.vec3 = glm.vec3(*DEFAULT_LIGHT_COLOR)
+        self.explicit_specular: glm.vec3 = glm.vec3(*DEFAULT_LIGHT_COLOR)
         
-        # Pre-calculated cosine values for Spotlight cones to avoid calculating acos() in the shader
         self.cutOff: float = math.cos(math.radians(DEFAULT_SPOT_INNER_ANGLE))
         self.outerCutOff: float = math.cos(math.radians(DEFAULT_SPOT_OUTER_ANGLE))
         
@@ -45,7 +44,7 @@ class LightComponent(Component):
                 
     @property
     def ambient(self) -> glm.vec3:
-        """Evaluates final ambient color taking into account the global intensity scalar."""
+        """Evaluates final ambient color mapping against the global intensity scalar."""
         if not self.on: 
             return glm.vec3(0)
         base = self.explicit_ambient if self.use_advanced_mode else (self.color * self.ambient_strength)
@@ -68,6 +67,7 @@ class LightComponent(Component):
         return base * self.intensity
 
     def to_dict(self) -> Dict[str, Any]:
+        """Serializes light configuration payload."""
         return {
             "type": self.type, 
             "on": self.on, 
@@ -84,13 +84,13 @@ class LightComponent(Component):
             "out": self.outerCutOff, 
             "yaw": 0.0, 
             "pitch": 0.0,
-            
             "const": self.constant,
             "lin": self.linear,
             "quad": self.quadratic
         }
 
     def from_dict(self, data: Dict[str, Any]) -> None:
+        """Deserializes lighting parameters."""
         self.type = data.get("type", "Point")
         self.on = bool(data.get("on", True))
         self.intensity = float(data.get("intensity", DEFAULT_LIGHT_INTENSITY))

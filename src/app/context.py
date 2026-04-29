@@ -1,18 +1,17 @@
 """
 Global Application Context.
-Implements the Singleton Design Pattern to provide a centralized state repository.
+Implements the Singleton pattern to provide a centralized state repository.
 """
 
-from typing import Any
+from typing import Any, Optional
 from .events import EventBus
 
 class AppContext:
     """
-    Global application state repository.
-    Controllers interact with this context to access the 3D Engine Facade or emit/listen to events 
-    without requiring tight coupling or circular imports.
+    Global state container bridging UI and Engine layers.
+    Prevents tight coupling and circular imports.
     """
-    _instance = None
+    _instance: Optional['AppContext'] = None
 
     def __new__(cls) -> 'AppContext':
         if cls._instance is None:
@@ -23,20 +22,20 @@ class AppContext:
 
     @property
     def engine(self) -> Any:
-        """Accesses the 3D Engine Facade API."""
+        """Retrieves the active 3D Engine instance."""
         if self._engine is None:
-            raise RuntimeError("CRITICAL: AppContext.engine is not initialized. Ensure the Engine is assigned during application bootstrap.")
+            raise RuntimeError("Engine not initialized. Ensure assignment during application bootstrap.")
         return self._engine
 
     @engine.setter
     def engine(self, value: Any) -> None:
-        """Injects the Engine instance. This should strictly be called once during startup."""
+        """Injects the Engine dependency once during startup."""
         self._engine = value
 
     @property
     def events(self) -> EventBus:
-        """Accesses the Event Bus for cross-module decoupled communication."""
+        """Accesses the global Event Bus."""
         return self._events
     
-# Global Singleton Instance exposed to the entire application
+# Global Singleton instance
 ctx = AppContext()

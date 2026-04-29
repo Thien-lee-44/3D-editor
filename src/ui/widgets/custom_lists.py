@@ -1,9 +1,15 @@
+"""
+Custom List & Tree Widgets.
+Implements specialized item views for the Asset Browser and Hierarchy Panel,
+supporting internal Drag-and-Drop operations and context menus.
+"""
+
+import os
+from typing import Any, List, Dict, Optional
 from PySide6.QtWidgets import (QListWidget, QListWidgetItem, QMenu, QMessageBox,
                                QTreeWidget, QTreeWidgetItem, QAbstractItemView)
 from PySide6.QtCore import Qt, QMimeData, QSize, QPoint
 from PySide6.QtGui import QDropEvent, QMouseEvent
-from typing import Any, List, Dict, Optional
-import os
 
 from src.app.config import ASSET_ICON_SIZE, ASSET_LIST_SPACING, CONTEXT_MENU_STYLE
 
@@ -16,16 +22,17 @@ class AssetListWidget(QListWidget):
     Specialized List Widget for displaying resources (Models/Textures).
     Packages data into MIME strings so the 3D Viewport can intercept Drag-and-Drop events.
     """
+    
     def __init__(self, asset_type: str, controller: Any) -> None:
         super().__init__()
-        self.asset_type = asset_type 
-        self._controller = controller 
+        self.asset_type: str = asset_type 
+        self._controller: Any = controller 
         
         self.setDragEnabled(True)
         self.setDefaultDropAction(Qt.CopyAction)
         self.setSelectionMode(QListWidget.SingleSelection)
         
-        # Larger display format for Texture images
+        # Enlarge display format for Texture images
         if asset_type == 'TEXTURE':
             self.setIconSize(QSize(ASSET_ICON_SIZE, ASSET_ICON_SIZE))
             self.setSpacing(ASSET_LIST_SPACING)
@@ -45,8 +52,10 @@ class AssetListWidget(QListWidget):
         return mime
 
     def _show_context_menu(self, pos: QPoint) -> None:
+        """Displays a context menu for asset deletion."""
         item = self.itemAt(pos)
-        if not item: return
+        if not item: 
+            return
         
         path = item.data(Qt.UserRole)
         
@@ -57,11 +66,14 @@ class AssetListWidget(QListWidget):
         action_selected = menu.exec(self.mapToGlobal(pos))
         
         if action_selected == action_delete:
-            ans = QMessageBox.question(self, "Confirm Delete", 
-                                       f"Are you sure you want to remove this asset from the project?\n{os.path.basename(path)}",
-                                       QMessageBox.Yes | QMessageBox.No)
+            ans = QMessageBox.question(
+                self, "Confirm Delete", 
+                f"Are you sure you want to remove this asset from the project?\n{os.path.basename(path)}",
+                QMessageBox.Yes | QMessageBox.No
+            )
             if ans == QMessageBox.Yes:
                 self._controller.request_delete_asset(path, self.asset_type)
+
 
 # =========================================================================
 # HIERARCHY TREE WIDGET
@@ -69,11 +81,12 @@ class AssetListWidget(QListWidget):
 
 class EntityTreeWidget(QTreeWidget):
     """
-    Custom QTreeWidget supporting hierarchy drag-drop and multi-selection.
+    Custom QTreeWidget supporting hierarchical drag-and-drop and multi-selection.
     """
+    
     def __init__(self, controller: Any) -> None:
         super().__init__()
-        self._controller = controller 
+        self._controller: Any = controller 
         
         self.setHeaderHidden(True)
         self.setSelectionMode(QAbstractItemView.ExtendedSelection)
@@ -85,6 +98,7 @@ class EntityTreeWidget(QTreeWidget):
         self.setDragDropMode(QAbstractItemView.InternalMove)
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
+        """Safely handles multi-selection modifiers during Drag-and-Drop interactions."""
         modifiers = event.modifiers()
         if modifiers & (Qt.ControlModifier | Qt.ShiftModifier):
             self.setDragDropMode(QAbstractItemView.NoDragDrop)
@@ -94,7 +108,10 @@ class EntityTreeWidget(QTreeWidget):
             super().mousePressEvent(event)
 
     def dropEvent(self, event: QDropEvent) -> None:
-        """Overrides the Drop event to synchronize the visual tree changes with the underlying ECS."""
+        """
+        Overrides the Drop event to synchronize the visual tree changes 
+        with the underlying Engine's ECS.
+        """
         # 1. Allow Qt to physically move the item within the UI tree
         super().dropEvent(event)
         

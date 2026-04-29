@@ -1,6 +1,6 @@
 from PySide6.QtWidgets import QVBoxLayout, QScrollArea, QWidget
 from PySide6.QtCore import Qt
-from typing import Any, Dict
+from typing import Any, Dict, Tuple
 
 from src.app import ctx
 from src.ui.views.panels.base_panel import BasePanel
@@ -95,7 +95,7 @@ class InspectorPanelView(BasePanel):
         self.light_widget.setVisible(has_light)
         self.camera_widget.setVisible(has_cam)
 
-    def fast_update_transform(self, transform_tuple: tuple) -> None:
+    def fast_update_transform(self, transform_tuple: Tuple[str, Tuple[float, float, float]]) -> None:
         """Anti-lag hook: Extracts (mode, values) from tuple and updates the correct widget."""
         if not isinstance(transform_tuple, tuple) or len(transform_tuple) != 2:
             return

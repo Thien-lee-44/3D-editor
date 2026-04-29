@@ -1,3 +1,8 @@
+"""
+Camera Component Widget.
+Inspector panel for manipulating virtual optics settings like Field of View and Clipping Planes.
+"""
+
 from typing import Any, Dict
 from PySide6.QtWidgets import QFormLayout, QPushButton, QCheckBox, QComboBox, QLabel
 from src.ui.widgets.custom_inputs import SliderSpinBox
@@ -12,7 +17,14 @@ from src.app.config import (
     STYLE_BTN_ACTIVE_CAM, STYLE_BTN_INACTIVE_CAM
 )
 
+
 class CameraWidget(BaseComponentWidget):
+    """
+    Inspector panel allowing fine-tuning of camera projection parameters.
+    Provides inputs for FOV, Orthographic Size, and Clipping Planes, as well as 
+    controls for setting the active rendering camera and proxy visibility.
+    """
+
     def __init__(self, controller: Any) -> None:
         super().__init__("Camera", controller)
         f_cam = QFormLayout()
@@ -33,22 +45,38 @@ class CameraWidget(BaseComponentWidget):
         f_cam.addRow("Projection:", self.cmb_cam_mode)
         
         self.lbl_cam_fov = QLabel("FOV:")
-        self.sp_cam_fov = SliderSpinBox(*CAMERA_FOV_RANGE, CAMERA_FOV_STEP, DEFAULT_CAMERA_FOV, self.apply_camera, press_callback=self.request_undo_snapshot)
+        self.sp_cam_fov = SliderSpinBox(
+            *CAMERA_FOV_RANGE, CAMERA_FOV_STEP, DEFAULT_CAMERA_FOV, 
+            self.apply_camera, press_callback=self.request_undo_snapshot
+        )
         f_cam.addRow(self.lbl_cam_fov, self.sp_cam_fov)
 
         self.lbl_cam_ortho = QLabel("Ortho Size:")
-        self.sp_cam_ortho = SliderSpinBox(*CAMERA_ORTHO_RANGE, CAMERA_ORTHO_STEP, 5.0, self.apply_camera, press_callback=self.request_undo_snapshot)
+        self.sp_cam_ortho = SliderSpinBox(
+            *CAMERA_ORTHO_RANGE, CAMERA_ORTHO_STEP, 5.0, 
+            self.apply_camera, press_callback=self.request_undo_snapshot
+        )
         f_cam.addRow(self.lbl_cam_ortho, self.sp_cam_ortho)
 
-        self.sp_cam_near = SliderSpinBox(*CAMERA_NEAR_RANGE, CAMERA_NEAR_STEP, DEFAULT_CAMERA_NEAR, self.apply_camera, press_callback=self.request_undo_snapshot)
+        self.sp_cam_near = SliderSpinBox(
+            *CAMERA_NEAR_RANGE, CAMERA_NEAR_STEP, DEFAULT_CAMERA_NEAR, 
+            self.apply_camera, press_callback=self.request_undo_snapshot
+        )
         f_cam.addRow("Near Clip:", self.sp_cam_near)
 
-        self.sp_cam_far = SliderSpinBox(*CAMERA_FAR_RANGE, CAMERA_FAR_STEP, DEFAULT_CAMERA_FAR, self.apply_camera, press_callback=self.request_undo_snapshot)
+        self.sp_cam_far = SliderSpinBox(
+            *CAMERA_FAR_RANGE, CAMERA_FAR_STEP, DEFAULT_CAMERA_FAR, 
+            self.apply_camera, press_callback=self.request_undo_snapshot
+        )
         f_cam.addRow("Far Clip:", self.sp_cam_far)
 
         self.layout.addLayout(f_cam)
 
     def update_data(self, cd: Dict[str, Any], mesh_visible: bool) -> None:
+        """
+        Reconstructs the UI state based on the selected camera's parameters.
+        Disables proxy toggling if the camera is currently active to prevent hiding the active view.
+        """
         if cd["active"]:
             self.btn_set_cam_active.setText("Active Camera")
             self.btn_set_cam_active.setStyleSheet(STYLE_BTN_ACTIVE_CAM)
@@ -96,8 +124,12 @@ class CameraWidget(BaseComponentWidget):
         self.sp_cam_far.blockSignals(False)
 
     def set_active_camera(self) -> None:
-        if not self._controller: return
+        """Triggers the Engine to designate this camera as the primary Viewport driver."""
+        if not self._controller: 
+            return
+            
         self.request_undo_snapshot()
+        
         # This function calls ctx directly because the operation is closely related to the Engine
         from src.app import ctx, AppEvent
         ctx.engine.set_active_camera_selected()
@@ -105,7 +137,9 @@ class CameraWidget(BaseComponentWidget):
         ctx.events.emit(AppEvent.SCENE_CHANGED)
 
     def apply_camera(self) -> None:
-        if not self._controller: return
+        """Extracts UI values and delegates the mutation to the Controller."""
+        if not self._controller: 
+            return
             
         mode = ["Perspective", "Orthographic"][self.cmb_cam_mode.currentIndex()]
         is_persp = (mode == "Perspective")
@@ -121,5 +155,6 @@ class CameraWidget(BaseComponentWidget):
         self._controller.set_property("Camera", "near", self.sp_cam_near.value())
         self._controller.set_property("Camera", "far", self.sp_cam_far.value())
 
+        # Only apply mesh visibility changes if the proxy checkbox is enabled (camera is not active)
         if self.chk_cam_proxy.isEnabled(): 
             self._controller.set_property("Mesh", "visible", self.chk_cam_proxy.isChecked())

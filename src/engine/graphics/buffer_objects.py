@@ -1,6 +1,10 @@
+"""
+Buffer Objects System.
+Encapsulates OpenGL VAO, VBO, and EBO structures to manage geometric data.
+"""
+
 import ctypes
 import numpy as np
-import glm
 from OpenGL.GL import *
 from typing import Optional, List, Union
 
@@ -8,10 +12,8 @@ from src.app.config import DEFAULT_POINT_SIZE
 
 class BufferObject:
     """
-    Encapsulates OpenGL Vertex Array Objects (VAO), Vertex Buffer Objects (VBO), 
-    and Element Buffer Objects (EBO). 
-    Architectural Note: This class strictly manages raw geometry data transmission 
-    to the GPU memory.
+    Manages raw geometry data transmission to GPU memory.
+    Configures attribute pointers for standard vertex layouts (Position, Normal, UV, Color).
     """
     
     def __init__(self, vertices: Union[List[float], np.ndarray], indices: Optional[Union[List[int], np.ndarray]] = None, vertex_size: int = 8, render_mode: int = GL_TRIANGLES) -> None:
@@ -28,6 +30,7 @@ class BufferObject:
         self._setup_opengl_buffers()
 
     def _setup_opengl_buffers(self) -> None:
+        """Allocates hardware buffers and defines the vertex memory layout."""
         self.vao = glGenVertexArrays(1)
         glBindVertexArray(self.vao)
         
@@ -52,15 +55,19 @@ class BufferObject:
             
         stride = self.vertex_size * 4 
         
+        # Position (vec3)
         glEnableVertexAttribArray(0)
         glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, stride, ctypes.c_void_p(0))
         
+        # Normal (vec3)
         glEnableVertexAttribArray(1)
         glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, stride, ctypes.c_void_p(3 * 4))
         
+        # UV (vec2)
         glEnableVertexAttribArray(2)
         glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, stride, ctypes.c_void_p(6 * 4))
         
+        # Vertex Color (vec3, Optional)
         if self.has_vertex_color:
             glEnableVertexAttribArray(3)
             glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, stride, ctypes.c_void_p(8 * 4))
@@ -71,6 +78,7 @@ class BufferObject:
         glBindVertexArray(0)
 
     def draw(self) -> None:
+        """Executes the appropriate OpenGL draw call based on the provided data."""
         glBindVertexArray(self.vao)
         if self.indices is not None:
             glDrawElements(self.render_mode, len(self.indices), GL_UNSIGNED_INT, None)
@@ -80,9 +88,11 @@ class BufferObject:
                 
             vertex_count = len(self.vertices) // self.vertex_size
             glDrawArrays(self.render_mode, 0, vertex_count)
+            
         glBindVertexArray(0)
         
     def delete_buffers(self) -> None:
+        """Frees allocated GPU resources."""
         glDeleteVertexArrays(1, [self.vao])
         glDeleteBuffers(1, [self.vbo])
         if self.indices is not None:

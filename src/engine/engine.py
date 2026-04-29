@@ -1,5 +1,11 @@
-import glm
+"""
+Engine Core Facade.
+Provides a unified entry point for the UI layer to communicate with the ECS and 
+Rendering subsystems. Ensures proper initialization and strictly routes interactions.
+"""
+
 import os
+import glm
 from OpenGL.GL import *
 from typing import Any, Dict, Optional, List, Tuple
 
@@ -19,15 +25,16 @@ class Engine:
     """
     
     def __init__(self) -> None:
-        self.scene = None
-        self.renderer = None
-        self.gizmo_renderer = None
-        self.hud_renderer = None
-        self.entity_fac = None
-        self.scene_mgr = None
-        self.interaction_mgr = None
+        self.scene: Optional[Scene] = None
+        self.renderer: Optional[Renderer] = None
+        self.gizmo_renderer: Any = None
+        self.hud_renderer: Any = None
+        self.entity_fac: Optional[EntityFactory] = None
+        self.scene_mgr: Optional[SceneManager] = None
+        self.interaction_mgr: Optional[InteractionManager] = None
 
     def init_viewport_gl(self) -> None:
+        """Initializes the core 3D scene, rendering subsystems, and OpenGL state for the main viewport."""
         self.scene = Scene()
         self.renderer = Renderer()
         
@@ -35,6 +42,7 @@ class Engine:
         self.scene_mgr = SceneManager(self.scene)
         self.interaction_mgr = InteractionManager(self.scene)
         
+        # Local import to prevent circular dependency initialization issues
         from src.engine.graphics.editor_renderer import GizmoRenderer
         self.gizmo_renderer = GizmoRenderer()
 
@@ -46,12 +54,14 @@ class Engine:
         glClearColor(0.0, 0.0, 0.0, 1.0)
 
     def init_hud_gl(self) -> None:
+        """Initializes the isolated OpenGL context and renderer for the Heads-Up Display (HUD)."""
         from src.engine.graphics.editor_renderer import HUDRenderer
         glEnable(GL_DEPTH_TEST)
         glClearColor(0.15, 0.15, 0.15, 1.0)
         self.hud_renderer = HUDRenderer()
 
     def resize_gl(self, w: int, h: int) -> None:
+        """Updates the OpenGL viewport dimensions and recalculates the active camera's aspect ratio."""
         if not self.scene: 
             return
             
@@ -66,6 +76,7 @@ class Engine:
     # =========================================================================
 
     def render_viewport(self, w: int, h: int, bg_color: tuple, active_axis: str, hovered_axis: str, hovered_screen_axis: str) -> None:
+        """Executes the main render loop, including the scene geometry and editor gizmos."""
         if not self.scene or not self.renderer or not self.interaction_mgr: 
             return
             
@@ -87,11 +98,13 @@ class Engine:
             )
 
     def raycast_select(self, mx: float, my: float, width: int, height: int) -> int:
+        """Delegates the screen-to-world raycast selection to the rendering subsystem."""
         if not self.renderer or not self.scene:
             return -1
         return self.renderer.raycast_select(self.scene, mx, my, width, height)
 
     def render_sun_hud(self, w: int, h: int, active_axis: str, is_hover: bool) -> None:
+        """Renders the directional light (Sun) manipulation HUD in a separate viewport context."""
         if not self.scene or self.scene.selected_index < 0 or not self.hud_renderer or not self.interaction_mgr: 
             return
             
@@ -109,34 +122,42 @@ class Engine:
     # =========================================================================
     
     def preload_model_to_cache(self, path: str) -> None:
-        """Parses the model file and loads its BufferObjects into the GPU cache without spawning it in the scene."""
+        """Parses the model file and loads its BufferObjects into the GPU cache without spawning it."""
         ResourceManager.get_model(path)
     
     def get_project_models(self) -> list: 
+        """Retrieves a list of all 3D models currently registered in the project."""
         return list(ResourceManager.project_models)
         
     def get_project_textures(self) -> list: 
+        """Retrieves a list of all textures currently registered in the project."""
         return list(ResourceManager.project_textures)
         
     def import_project_model(self, path: str) -> None: 
+        """Registers a 3D model asset into the project manifest."""
         ResourceManager.add_project_model(path)
         
     def import_project_texture(self, path: str) -> None: 
+        """Registers a texture asset into the project manifest."""
         ResourceManager.add_project_texture(path)
         
     def get_3d_primitive_names(self) -> list: 
+        """Retrieves the list of available 3D geometric primitives."""
         return list(PrimitivesManager.get_3d_paths().keys())
         
     def get_2d_primitive_names(self) -> list: 
+        """Retrieves the list of available 2D geometric primitives."""
         return list(PrimitivesManager.get_2d_paths().keys())
 
     def auto_load_default_assets(self, tex_dir: str) -> None:
+        """Scans the default textures directory and preloads valid image assets."""
         os.makedirs(tex_dir, exist_ok=True)
         for f in os.listdir(tex_dir):
             if f.lower().endswith(('.png', '.jpg', '.jpeg')): 
                 ResourceManager.add_project_texture(os.path.join(tex_dir, f).replace('\\', '/'))
 
     def delete_project_asset(self, path: str, asset_type: str) -> None:
+        """Removes a registered asset from the project manifest."""
         if asset_type == 'TEXTURE' and path in ResourceManager.project_textures: 
             ResourceManager.project_textures.remove(path)
         elif asset_type == 'MODEL' and path in ResourceManager.project_models: 
@@ -262,7 +283,7 @@ class Engine:
         if self.entity_fac: self.entity_fac.spawn_model_from_path(path)
 
     # ------------------ InteractionManager Delegates ------------------
-    def check_gizmo_hover(self, mx: float, my: float, width: int, height: int, custom_tf=None, custom_view=None, custom_proj=None, is_hud=False) -> Optional[str]:
+    def check_gizmo_hover(self, mx: float, my: float, width: int, height: int, custom_tf: Any = None, custom_view: Any = None, custom_proj: Any = None, is_hud: bool = False) -> Optional[str]:
         return self.interaction_mgr.check_gizmo_hover(mx, my, width, height, custom_tf, custom_view, custom_proj, is_hud) if self.interaction_mgr else None
 
     def check_screen_axis_hover(self, mx: float, my: float, width: int, height: int) -> Optional[str]:

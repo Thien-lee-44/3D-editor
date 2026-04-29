@@ -89,12 +89,8 @@ python run.py
 
 ```plaintext
 3D_Editor/
-│
 ├── src/
 │   ├── app/                    # Application Entry, Configurations (SSOT), Exceptions
-│   │   ├── config.py
-│   │   └── main.py
-│   │
 │   ├── engine/                 # ================= CORE RUNTIME ENGINE =================
 │   │   ├── engine.py           # Dynamic Facade API
 │   │   ├── core/               # Input & Interaction Managers
@@ -102,7 +98,6 @@ python run.py
 │   │   ├── graphics/           # OpenGL Buffers, Shaders, Materials, Render Queues
 │   │   ├── resources/          # Asset loading pipeline and RAM/VRAM Caching
 │   │   └── scene/              # ECS Architecture (Entities, Components, SceneManager)
-│   │
 │   └── ui/                     # ================= PYSIDE6 AUTHORING GUI =================
 │       ├── controllers/        # Logic Controllers (Asset, Project workflows)
 │       ├── views/              # Main Window, Dialogs, Viewport Canvas, and Dock Panels

@@ -1,9 +1,13 @@
+"""
+Material & Render State.
+Bridges ECS structures with GLSL uniform inputs to dictate surface rendering behavior.
+"""
+
 import os
 import glm
 from OpenGL.GL import *
-from typing import Tuple, Dict, Any, Optional
+from typing import Tuple, Dict, Any
 
-# Import SSOT configuration
 from src.app.config import (
     DEFAULT_MAT_AMBIENT, DEFAULT_MAT_DIFFUSE, 
     DEFAULT_MAT_SPECULAR, DEFAULT_MAT_SHININESS
@@ -23,7 +27,6 @@ class RenderState:
 class Material:
     """
     Defines the surface characteristics and multi-texturing mappings for an entity.
-    Bridges the gap between the ECS data structures and the GLSL shader uniforms.
     """
     
     def __init__(self, 
@@ -33,25 +36,25 @@ class Material:
                  shininess: float = DEFAULT_MAT_SHININESS) -> None:
                      
         # Toggle between scalar multiplier-based coloring and independent RGB channels
-        self.use_advanced_mode = False 
+        self.use_advanced_mode: bool = False 
         
         # Base attributes designed for simplified UI manipulation
-        self.base_color = glm.vec3(*diffuse) 
-        self.ambient_strength = 0.5
-        self.diffuse_strength = 1.0
-        self.specular_strength = 1.0
+        self.base_color: glm.vec3 = glm.vec3(*diffuse) 
+        self.ambient_strength: float = 0.5
+        self.diffuse_strength: float = 1.0
+        self.specular_strength: float = 1.0
         
         # Physical lighting reflection parameters
-        self._ambient = glm.vec3(*ambient)
-        self._diffuse = glm.vec3(*diffuse)
-        self._specular = glm.vec3(*specular)
-        self.emission = glm.vec3(0.0) 
-        self.shininess = shininess
-        self.opacity = 1.0            # 1.0 equates to fully opaque, 0.0 to fully transparent
-        self.ior = 1.0                # Index of Refraction for translucent materials
-        self.illum = 2                # Standard Illumination model identifier
+        self._ambient: glm.vec3 = glm.vec3(*ambient)
+        self._diffuse: glm.vec3 = glm.vec3(*diffuse)
+        self._specular: glm.vec3 = glm.vec3(*specular)
+        self.emission: glm.vec3 = glm.vec3(0.0) 
+        self.shininess: float = shininess
+        self.opacity: float = 1.0            
+        self.ior: float = 1.0                
+        self.illum: int = 2                
         
-        # NEW: Render State and Custom Shader Injection
+        # Render State and Custom Shader Injection
         self.render_state = RenderState()
         self.custom_shader_name: str = ""
         
@@ -65,10 +68,9 @@ class Material:
         self.map_opacity: int = 0
         self.map_reflection: int = 0
         
-        # Centralized dictionary tracking the absolute file paths of all active texture maps.
+        # Centralized dictionary tracking the absolute file paths of all active texture maps
         self.tex_paths: Dict[str, str] = {}
 
-    # Dynamic properties evaluate the final physical channels based on the current UI mode
     @property
     def ambient(self) -> glm.vec3: 
         return self._ambient if self.use_advanced_mode else self.base_color * self.ambient_strength
@@ -95,7 +97,7 @@ class Material:
 
     def apply(self, shader: Any) -> None:
         """
-        Transmits scalar/vector properties and binds active texture units to the currently executing Shader.
+        Transmits properties and binds active texture units to the currently executing Shader.
         Called implicitly by the Forward Renderer during the draw loop.
         """
         shader.set_vec3("material.ambient", self.ambient)
@@ -106,7 +108,7 @@ class Material:
         shader.set_float("material.opacity", self.opacity)
         
         def bind_tex(tex_id: int, unit: int, name: str) -> None:
-            """Internal helper to automatically allocate hardware texture units and toggle GLSL logic flags."""
+            """Allocates hardware texture units and toggles GLSL logic flags."""
             if tex_id != 0:
                 glActiveTexture(GL_TEXTURE0 + unit)
                 glBindTexture(GL_TEXTURE_2D, tex_id)
@@ -125,13 +127,13 @@ class Material:
         bind_tex(self.map_opacity, 6, "mapOpacity")
         bind_tex(self.map_reflection, 7, "mapReflection")
         
-        # Reset hardware active texture state to prevent spillover effects on subsequent draw calls
+        # Reset hardware active texture state to prevent spillover effects
         glActiveTexture(GL_TEXTURE0) 
 
     def setup_from_dict(self, mtl_data: Dict[str, Any]) -> None:
         """
         Reconstructs the material state from a parsed dictionary.
-        Typically utilized during .obj/.mtl loading or project deserialization.
+        Utilized during .obj/.mtl loading or project deserialization.
         """
         self.use_advanced_mode = True
         self._ambient = glm.vec3(*mtl_data.get('ambient', DEFAULT_MAT_AMBIENT))
@@ -141,7 +143,7 @@ class Material:
         self.shininess = mtl_data.get('shininess', DEFAULT_MAT_SHININESS)
         self.opacity = mtl_data.get('opacity', 1.0)
         
-        # Deferred import ensures the ResourceManager is fully initialized before texture resolution
+        # Deferred import ensures the ResourceManager is fully initialized
         from src.engine.resources.resource_manager import ResourceManager
         
         def load_and_assign_map(key: str, attr_name: str) -> None:

@@ -1,3 +1,8 @@
+"""
+Interaction & Picking System.
+Handles 3D entity selection, gizmo manipulation, and viewport camera controls.
+"""
+
 import glm
 import math
 from typing import Tuple, Optional, List, Dict, Any
@@ -6,35 +11,51 @@ from src.engine.scene.components import CameraComponent, TransformComponent, Mes
 from src.app.config import CAMERA_MOVE_SPEED, CAMERA_ROTATION_SPEED, HUD_AXIS_PADDING, HUD_AXIS_SCALE
 
 class MathUtils:
-    """Contains low-level intersection algorithms for 3D picking and collision."""
+    """Mathematical intersection algorithms for 3D picking."""
     
+    EPSILON = 1e-6
+
     @staticmethod
     def ray_intersect_aabb(ro: glm.vec3, rd: glm.vec3, bmin: glm.vec3, bmax: glm.vec3) -> Tuple[bool, float, Optional[glm.vec3]]:
-        """Slab method calculation for Ray vs Axis-Aligned Bounding Box intersection."""
-        tmin = (bmin.x - ro.x) / (rd.x if rd.x != 0 else 1e-6)
-        tmax = (bmax.x - ro.x) / (rd.x if rd.x != 0 else 1e-6)
+        """Slab method calculation for Ray vs AABB intersection."""
+        rd_x = rd.x if rd.x != 0 else MathUtils.EPSILON
+        tmin = (bmin.x - ro.x) / rd_x
+        tmax = (bmax.x - ro.x) / rd_x
         nx = -1 if rd.x > 0 else 1
-        if tmin > tmax: tmin, tmax, nx = tmax, tmin, -nx
         
-        tymin = (bmin.y - ro.y) / (rd.y if rd.y != 0 else 1e-6)
-        tymax = (bmax.y - ro.y) / (rd.y if rd.y != 0 else 1e-6)
+        if tmin > tmax: 
+            tmin, tmax, nx = tmax, tmin, -nx
+        
+        rd_y = rd.y if rd.y != 0 else MathUtils.EPSILON
+        tymin = (bmin.y - ro.y) / rd_y
+        tymax = (bmax.y - ro.y) / rd_y
         ny = -1 if rd.y > 0 else 1
-        if tymin > tymax: tymin, tymax, ny = tymax, tymin, -ny
         
-        if (tmin > tymax) or (tymin > tmax): return False, -1, None
+        if tymin > tymax: 
+            tymin, tymax, ny = tymax, tymin, -ny
+        
+        if (tmin > tymax) or (tymin > tmax): 
+            return False, -1, None
         
         hit_normal = glm.vec3(nx, 0, 0)
         if tymin > tmin: 
             tmin = tymin
             hit_normal = glm.vec3(0, ny, 0)
-        if tymax < tmax: tmax = tymax
         
-        tzmin = (bmin.z - ro.z) / (rd.z if rd.z != 0 else 1e-6)
-        tzmax = (bmax.z - ro.z) / (rd.z if rd.z != 0 else 1e-6)
+        if tymax < tmax: 
+            tmax = tymax
+        
+        rd_z = rd.z if rd.z != 0 else MathUtils.EPSILON
+        tzmin = (bmin.z - ro.z) / rd_z
+        tzmax = (bmax.z - ro.z) / rd_z
         nz = -1 if rd.z > 0 else 1
-        if tzmin > tzmax: tzmin, tzmax, nz = tzmax, tzmin, -nz
         
-        if (tmin > tzmax) or (tzmin > tmax): return False, -1, None
+        if tzmin > tzmax: 
+            tzmin, tzmax, nz = tzmax, tzmin, -nz
+        
+        if (tmin > tzmax) or (tzmin > tmax): 
+            return False, -1, None
+            
         if tzmin > tmin: 
             tmin = tzmin
             hit_normal = glm.vec3(0, 0, nz)
@@ -43,13 +64,17 @@ class MathUtils:
 
     @staticmethod
     def ray_intersect_ring(ro: glm.vec3, rd: glm.vec3, normal: glm.vec3, radius: float, thick: float) -> Tuple[bool, float]:
-        """Approximates a Ray vs Torus intersection used for rotation gizmo evaluation."""
-        if abs(normal.x) > 0.5: axis, u, v = 0, 1, 2
-        elif abs(normal.y) > 0.5: axis, u, v = 1, 0, 2
-        else: axis, u, v = 2, 0, 1
+        """Approximates a Ray vs Torus intersection for rotation gizmos."""
+        if abs(normal.x) > 0.5: 
+            axis, u, v = 0, 1, 2
+        elif abs(normal.y) > 0.5: 
+            axis, u, v = 1, 0, 2
+        else: 
+            axis, u, v = 2, 0, 1
         
         o_u, o_v, o_w = ro[u], ro[v], ro[axis]
         d_u, d_v, d_w = rd[u], rd[v], rd[axis]
+        
         r_out = radius + thick
         r_in = max(0.0, radius - thick)
         half_h = thick * 1.5 
@@ -58,7 +83,7 @@ class MathUtils:
         A = d_u**2 + d_v**2
         B = 2.0 * (o_u * d_u + o_v * d_v)
         
-        if A > 1e-6:
+        if A > MathUtils.EPSILON:
             for C in [o_u**2 + o_v**2 - r_out**2, o_u**2 + o_v**2 - r_in**2]:
                 delta = B**2 - 4 * A * C
                 if delta >= 0:
@@ -66,7 +91,8 @@ class MathUtils:
                     for t in [(-B - sq_delta) / (2 * A), (-B + sq_delta) / (2 * A)]:
                         if t > 0 and abs(o_w + t * d_w) <= half_h: 
                             hit, min_t = True, min(min_t, t)
-        if abs(d_w) > 1e-6:
+                            
+        if abs(d_w) > MathUtils.EPSILON:
             for t in [(half_h - o_w) / d_w, (-half_h - o_w) / d_w]:
                 if t > 0 and r_in**2 <= (o_u + t * d_u)**2 + (o_v + t * d_v)**2 <= r_out**2: 
                     hit, min_t = True, min(min_t, t)
@@ -74,14 +100,20 @@ class MathUtils:
         return hit, min_t if hit else -1
 
 class InteractionMath:
-    """Provides translation functions between 2D screen input vectors and 3D world transformations."""
+    """Translates 2D screen input vectors into 3D world transformations."""
     
     @staticmethod
-    def calc_gizmo_rotate_angle(dx: float, dy: float, active_axis: str, quat_rot: glm.quat, view_matrix: glm.mat4, speed_multiplier: float) -> float:
-        w_axis = glm.vec3(glm.mat4_cast(quat_rot) * glm.vec4((1,0,0) if active_axis=='X' else ((0,1,0) if active_axis=='Y' else (0,0,1)), 0))
+    def calc_gizmo_rotate_angle(dx: float, dy: float, active_axis: str, quat_rot: glm.quat, view_matrix: glm.mat4, speed: float) -> float:
+        axis_map = {'X': (1,0,0), 'Y': (0,1,0), 'Z': (0,0,1)}
+        w_axis = glm.vec3(glm.mat4_cast(quat_rot) * glm.vec4(axis_map[active_axis], 0))
         view_axis = glm.vec3(view_matrix * glm.vec4(w_axis, 0.0))
-        dir_2d = glm.normalize(glm.vec2(-view_axis.y, view_axis.x)) if glm.length(glm.vec2(view_axis.x, view_axis.y)) > 0.001 else glm.vec2(1,0)
-        return glm.dot(glm.vec2(dx, dy), dir_2d) * speed_multiplier
+        
+        if glm.length(glm.vec2(view_axis.x, view_axis.y)) > 0.001:
+            dir_2d = glm.normalize(glm.vec2(-view_axis.y, view_axis.x))
+        else:
+            dir_2d = glm.vec2(1, 0)
+            
+        return glm.dot(glm.vec2(dx, dy), dir_2d) * speed
 
     @staticmethod
     def calc_arcball_rotation(dx: float, dy: float, quat_rot: glm.quat, view_matrix: glm.mat4, speed_x: float, speed_y: float) -> Tuple[glm.quat, glm.vec3]:
@@ -94,12 +126,10 @@ class InteractionMath:
 
     @staticmethod
     def calc_gizmo_move_offset(dx: float, dy: float, active_axis: str, quat_rot: glm.quat, dir_2d: glm.vec2, dist: float, speed: float) -> glm.vec3:
-        loc_dir = glm.vec3(1,0,0) if active_axis=='X' else (glm.vec3(0,1,0) if active_axis=='Y' else glm.vec3(0,0,1))
-        return glm.vec3(glm.mat4_cast(quat_rot) * glm.vec4(loc_dir * (glm.dot(glm.vec2(dx, dy), dir_2d) * dist * speed), 0.0))
-
-    @staticmethod
-    def calc_gizmo_scale_amount(dx: float, dy: float, dir_2d: glm.vec2, speed: float) -> float:
-        return glm.dot(glm.vec2(dx, dy), dir_2d) * speed
+        axis_map = {'X': glm.vec3(1,0,0), 'Y': glm.vec3(0,1,0), 'Z': glm.vec3(0,0,1)}
+        loc_dir = axis_map[active_axis]
+        move_amount = glm.dot(glm.vec2(dx, dy), dir_2d) * dist * speed
+        return glm.vec3(glm.mat4_cast(quat_rot) * glm.vec4(loc_dir * move_amount, 0.0))
 
     @staticmethod
     def calc_free_move_offset(dx: float, dy: float, view_matrix: glm.mat4, dist: float, speed: float) -> glm.vec3:
@@ -108,18 +138,19 @@ class InteractionMath:
         return cam_right * (dx * dist * speed) + cam_up * (dy * dist * speed)
 
 class InteractionManager:
-    """Manages scene-wide UI interactions including entity picking, gizmo manipulation, and viewport camera control."""
+    """Manages scene-wide UI interactions including entity picking and camera control."""
     
     def __init__(self, scene: Any) -> None:
         self.scene = scene
 
     def _get_active_camera(self) -> Tuple[Optional[TransformComponent], Optional[CameraComponent]]:
-        """Resolves the currently designated scene camera for rendering/raycasting."""
+        """Resolves the designated rendering camera from the scene."""
         for ent in self.scene.entities:
             cam = ent.get_component(CameraComponent)
             if cam and getattr(cam, 'is_active', False): 
                 return ent.get_component(TransformComponent), cam
                 
+        # Fallback to the first available camera
         for ent in self.scene.entities:
             cam = ent.get_component(CameraComponent)
             if cam: 
@@ -128,7 +159,7 @@ class InteractionManager:
         return None, None
 
     def get_ray(self, mx: float, my: float, width: int, height: int, cam_tf: TransformComponent, cam: CameraComponent, custom_view: Optional[glm.mat4] = None, custom_proj: Optional[glm.mat4] = None) -> Tuple[Optional[glm.vec3], Optional[glm.vec3]]:
-        """Unprojects screen coordinates into a world-space Ray (Origin and Direction)."""
+        """Unprojects screen coordinates into a world-space Ray."""
         x = (2.0 * mx) / max(width, 1.0) - 1.0
         y = 1.0 - (2.0 * my) / max(height, 1.0)
         
@@ -157,31 +188,39 @@ class InteractionManager:
         return ray_origin, ray_dir
 
     def project_to_screen(self, pos_3d: glm.vec3, width: int, height: int, cam: CameraComponent) -> Optional[glm.vec2]:
-        """Transforms a 3D coordinate into 2D viewport space."""
+        """Transforms a 3D world coordinate into 2D viewport space."""
         if not cam: return None
         clip = cam.get_projection_matrix() * cam.get_view_matrix() * glm.vec4(pos_3d, 1.0)
         if clip.w == 0 or (cam.mode == "Perspective" and clip.w <= 0): 
             return None
+            
         ndc = glm.vec3(clip) / clip.w
-        return glm.vec2((ndc.x + 1.0)/2.0 * width, (1.0 - ndc.y)/2.0 * height)
+        return glm.vec2((ndc.x + 1.0) / 2.0 * width, (1.0 - ndc.y) / 2.0 * height)
 
     def get_axis_screen_dir(self, axis_char: str, width: int, height: int, cam: CameraComponent) -> glm.vec2:
-        """Calculates the 2D screen-space trajectory of a 3D gizmo axis."""
-        if self.scene.selected_index < 0: return glm.vec2(0, 0)
+        """Calculates the 2D trajectory of a 3D gizmo axis for movement mapping."""
+        if self.scene.selected_index < 0: 
+            return glm.vec2(0, 0)
+            
         tf = self.scene.entities[self.scene.selected_index].get_component(TransformComponent)
-        if not tf: return glm.vec2(0, 0)
+        if not tf: 
+            return glm.vec2(0, 0)
         
-        local_axis = glm.vec3(1,0,0) if axis_char == 'X' else (glm.vec3(0,1,0) if axis_char == 'Y' else glm.vec3(0,0,1))
+        axis_map = {'X': glm.vec3(1,0,0), 'Y': glm.vec3(0,1,0), 'Z': glm.vec3(0,0,1)}
+        local_axis = axis_map.get(axis_char, glm.vec3(0,0,0))
         axis_3d = tf.global_position + glm.vec3(glm.mat4_cast(tf.global_quat_rot) * glm.vec4(local_axis, 0.0))
         
         p0 = self.project_to_screen(tf.global_position, width, height, cam)
         p1 = self.project_to_screen(axis_3d, width, height, cam)
-        if p0 is None or p1 is None: return glm.vec2(0, 0)
         
-        return glm.normalize(p1 - p0) if glm.length(p1 - p0) > 0 else glm.vec2(0, 0)
+        if p0 is None or p1 is None: 
+            return glm.vec2(0, 0)
+        
+        dir_vec = p1 - p0
+        return glm.normalize(dir_vec) if glm.length(dir_vec) > 0 else glm.vec2(0, 0)
 
     def check_gizmo_hover(self, mx: float, my: float, width: int, height: int, custom_tf: Optional[TransformComponent] = None, custom_view: Optional[glm.mat4] = None, custom_proj: Optional[glm.mat4] = None, is_hud: bool = False) -> Optional[str]:
-        """Evaluates intersection between screen cursor and translation/rotation/scale handles."""
+        """Evaluates intersection between screen cursor and manipulation handles."""
         cam_tf, cam = self._get_active_camera()
         
         if is_hud:
@@ -189,7 +228,6 @@ class InteractionManager:
             tf = custom_tf
             mode = "ROTATE"
             ray_origin, ray_dir = self.get_ray(mx, my, width, height, cam_tf, cam, custom_view, custom_proj)
-            # HUD is rendered with global orientation, so picking must use global quaternion too.
             inv_gizmo = glm.inverse(glm.mat4_cast(tf.global_quat_rot))
             ring_radius, ring_thick = 0.8, 0.08
         else:
@@ -197,25 +235,23 @@ class InteractionManager:
             sel_ent = self.scene.entities[self.scene.selected_index]
             tf = sel_ent.get_component(TransformComponent)
             renderer = sel_ent.get_component(MeshRenderer)
-            if not tf or not cam or not cam_tf: return None
             
-            # Defense protocol: Avoid selecting the manipulator widget attached to the active view camera
-            if sel_ent.get_component(CameraComponent) == cam:
-                return None
+            if not tf or not cam or not cam_tf: return None
+            if sel_ent.get_component(CameraComponent) == cam: return None
 
             cam_g_pos = cam_tf.global_position
             g_pos = tf.global_position
             g_rot = tf.global_quat_rot
             mode = getattr(self.scene, 'manipulation_mode', 'ROTATE')
             
-            if renderer and getattr(renderer, 'is_proxy', False):
-                if mode == "SCALE": mode = "NONE"
+            if renderer and getattr(renderer, 'is_proxy', False) and mode == "SCALE":
+                mode = "NONE"
             if mode == "NONE": return None
             
             ray_origin, ray_dir = self.get_ray(mx, my, width, height, cam_tf, cam)
             if not ray_origin: return None
 
-            # Maintain constant pixel size for gizmo relative to camera depth
+            # Maintain constant visual scale for gizmos
             pixel_factor = 100.0 / max(height, 1.0)
             if cam.mode == "Perspective":
                 dist = glm.length(cam_g_pos - g_pos)
@@ -242,6 +278,7 @@ class InteractionManager:
                 hit_x, tx, _ = MathUtils.ray_intersect_aabb(lro, lrd, glm.vec3(thickness, -thickness, -thickness), glm.vec3(length, thickness, thickness))
                 hit_y, ty, _ = MathUtils.ray_intersect_aabb(lro, lrd, glm.vec3(-thickness, thickness, -thickness), glm.vec3(thickness, length, thickness))
                 hit_z, tz, _ = MathUtils.ray_intersect_aabb(lro, lrd, glm.vec3(-thickness, -thickness, thickness), glm.vec3(thickness, thickness, length))
+                
                 if hit_x and tx < min_t: min_t, hit_axis = tx, 'X'
                 if hit_y and ty < min_t: min_t, hit_axis = ty, 'Y'
                 if hit_z and tz < min_t: min_t, hit_axis = tz, 'Z'
@@ -250,6 +287,7 @@ class InteractionManager:
             hit_x, tx = MathUtils.ray_intersect_ring(lro, lrd, glm.vec3(1,0,0), ring_radius, ring_thick)
             hit_y, ty = MathUtils.ray_intersect_ring(lro, lrd, glm.vec3(0,1,0), ring_radius, ring_thick)
             hit_z, tz = MathUtils.ray_intersect_ring(lro, lrd, glm.vec3(0,0,1), ring_radius, ring_thick)
+            
             if hit_x and tx < min_t: min_t, hit_axis = tx, 'X'
             if hit_y and ty < min_t: min_t, hit_axis = ty, 'Y'
             if hit_z and tz < min_t: min_t, hit_axis = tz, 'Z'
@@ -258,7 +296,7 @@ class InteractionManager:
         return hit_axis
 
     def check_screen_axis_hover(self, mx: float, my: float, width: int, height: int) -> Optional[str]:
-        """Checks for interactions with the corner orientation indicator (HUD Axis)."""
+        """Checks interactions with the corner orientation compass."""
         if not getattr(self.scene, 'show_screen_axis', True): return None
         cam_tf, cam = self._get_active_camera()
         if not cam: return None
@@ -271,9 +309,7 @@ class InteractionManager:
         if clip_origin.w <= 0: return None
         ndc_origin = clip_origin / clip_origin.w
         
-        pad = HUD_AXIS_PADDING
-        scl = HUD_AXIS_SCALE
-        p0 = glm.vec2((width - pad) + ndc_origin.x * scl, pad - ndc_origin.y * scl)
+        p0 = glm.vec2((width - HUD_AXIS_PADDING) + ndc_origin.x * HUD_AXIS_SCALE, HUD_AXIS_PADDING - ndc_origin.y * HUD_AXIS_SCALE)
         
         pts_3d = [('X', glm.vec3(1.3, 0, 0)), ('Y', glm.vec3(0, 1.3, 0)), ('Z', glm.vec3(0, 0, 1.3)),
                   ('-X', glm.vec3(-1.1, 0, 0)), ('-Y', glm.vec3(0, -1.1, 0)), ('-Z', glm.vec3(0, 0, -1.1))]
@@ -284,7 +320,7 @@ class InteractionManager:
             clip = axis_proj * (axis_view * glm.vec4(pos, 1.0))
             if clip.w > 0:
                 ndc = clip / clip.w
-                p1 = glm.vec2((width - pad) + ndc.x * scl, pad - ndc.y * scl)
+                p1 = glm.vec2((width - HUD_AXIS_PADDING) + ndc.x * HUD_AXIS_SCALE, HUD_AXIS_PADDING - ndc.y * HUD_AXIS_SCALE)
                 line_vec = p1 - p0
                 l2 = glm.dot(line_vec, line_vec)
                 if l2 == 0: continue
@@ -300,7 +336,7 @@ class InteractionManager:
         return closest_axis
 
     def check_hud_gizmo_hover(self, mx: float, my: float, width: int, height: int) -> str:
-        """Proxies hover state checks for the isolated HUD representation of the active transform."""
+        """Proxies hover checks for the isolated HUD gizmo."""
         if self.scene.selected_index < 0: return 'ALL'
         tf = self.scene.entities[self.scene.selected_index].get_component(TransformComponent)
         cam_tf, cam = self._get_active_camera()
@@ -312,8 +348,8 @@ class InteractionManager:
         """Applies input deltas to rotate via the corner Arcball UI."""
         if self.scene.selected_index < 0: return
         tf = self.scene.entities[self.scene.selected_index].get_component(TransformComponent)
-        if not tf:
-            return
+        if not tf: return
+        
         cam_tf, cam = self._get_active_camera()
         hud_view = glm.translate(glm.mat4(1.0), glm.vec3(0, 0, -2.5)) * (glm.mat4(glm.mat3(cam.get_view_matrix())) if cam else glm.mat4(1.0))
         global_quat = tf.global_quat_rot
@@ -329,16 +365,13 @@ class InteractionManager:
         tf.sync_from_gui()
 
     def handle_gizmo_drag(self, dx: float, dy: float, active_axis: str, width: int, height: int) -> None:
-        """Maps 2D mouse deltas into 3D operations (Translate, Rotate, Scale) on the active entity."""
+        """Maps 2D mouse deltas into 3D operations (Translate, Rotate, Scale)."""
         if self.scene.selected_index < 0: return
         sel_ent = self.scene.entities[self.scene.selected_index]
         tf = sel_ent.get_component(TransformComponent)
         cam_tf, cam = self._get_active_camera()
-        if not tf or not cam_tf: return
-
-        # Defense protocol against manipulating the viewpoint actively rendering the frame
-        if sel_ent.get_component(CameraComponent) == cam:
-            return
+        
+        if not tf or not cam_tf or sel_ent.get_component(CameraComponent) == cam: return
 
         mode = getattr(self.scene, 'manipulation_mode', 'ROTATE')
         cam_g_pos, g_pos, g_rot = cam_tf.global_position, tf.global_position, tf.global_quat_rot
@@ -348,33 +381,35 @@ class InteractionManager:
                 tf.scale = glm.max(glm.vec3(0.01), tf.scale + glm.vec3((dx - -dy) * 0.005))
             else:
                 if mode == "ROTATE":
-                    tf.rotate_local(active_axis, InteractionMath.calc_gizmo_rotate_angle(dx, dy, active_axis, g_rot, cam.get_view_matrix(), speed_multiplier=-0.8)) 
+                    angle = InteractionMath.calc_gizmo_rotate_angle(dx, dy, active_axis, g_rot, cam.get_view_matrix(), speed=-0.8)
+                    tf.rotate_local(active_axis, angle) 
                 elif mode == "MOVE":
                     dir_2d = self.get_axis_screen_dir(active_axis, width, height, cam)
                     dist = glm.length(cam_g_pos - g_pos) if cam.mode == "Perspective" else cam.ortho_size
-                    tf.position += tf.world_to_local_vec(InteractionMath.calc_gizmo_move_offset(dx, -dy, active_axis, g_rot, dir_2d, dist, speed=0.0008))
+                    offset = InteractionMath.calc_gizmo_move_offset(dx, -dy, active_axis, g_rot, dir_2d, dist, speed=0.0008)
+                    tf.position += tf.world_to_local_vec(offset)
                 elif mode == "SCALE":
                     dir_2d = self.get_axis_screen_dir(active_axis, width, height, cam)
-                    amt = InteractionMath.calc_gizmo_scale_amount(dx, -dy, dir_2d, speed=0.005)
+                    amt = glm.dot(glm.vec2(dx, -dy), dir_2d) * 0.005
                     if active_axis == 'X': tf.scale.x = max(0.01, tf.scale.x + amt)
                     if active_axis == 'Y': tf.scale.y = max(0.01, tf.scale.y + amt)
                     if active_axis == 'Z': tf.scale.z = max(0.01, tf.scale.z + amt)
         else:
-            # Freeform manipulations based on view plane
             if mode == "ROTATE": 
                 new_global_quat, _ = InteractionMath.calc_arcball_rotation(dx, dy, g_rot, cam.get_view_matrix(), speed_x=0.5, speed_y=-0.5)
                 tf.quat_rot = tf.world_to_local_quat(new_global_quat)
                 tf.rotation = glm.degrees(glm.eulerAngles(tf.quat_rot))
             elif mode == "MOVE": 
                 dist = glm.length(cam_g_pos - g_pos) if cam.mode == "Perspective" else cam.ortho_size
-                tf.position += tf.world_to_local_vec(InteractionMath.calc_free_move_offset(dx, dy, cam.get_view_matrix(), dist, speed=0.0008))
+                offset = InteractionMath.calc_free_move_offset(dx, dy, cam.get_view_matrix(), dist, speed=0.0008)
+                tf.position += tf.world_to_local_vec(offset)
             elif mode == "SCALE": 
                 tf.scale = glm.max(glm.vec3(0.01), tf.scale + glm.vec3((dx + dy) * 0.005))
                 
         tf.sync_from_gui()
 
     def update_camera_movement(self, active_commands: List[str], dt: float) -> bool:
-        """Processes continuous WASD-style navigation commands."""
+        """Processes continuous WASD navigation."""
         cam_tf, cam = self._get_active_camera()
         if not cam or not cam_tf: return False
         
@@ -411,7 +446,7 @@ class InteractionManager:
             cam_tf.position += rot_mat[1] * (dy * factor) - rot_mat[0] * (dx * factor)
 
     def zoom_camera(self, yoffset: float) -> None:
-        """Adjusts depth translation for Perspective cameras, or viewport scale for Orthographic."""
+        """Adjusts depth translation or orthographic scale."""
         cam_tf, cam = self._get_active_camera()
         if not cam or not cam_tf: return
         if cam.mode == "Perspective": 
@@ -420,18 +455,17 @@ class InteractionManager:
             cam.ortho_size = max(0.1, cam.ortho_size - yoffset * 0.5)
 
     def snap_camera_to_axis(self, axis: str) -> None:
-        """Aligns the viewpoint to perfectly face cardinal direction planes (Top, Front, Right, etc.)."""
+        """Aligns the viewpoint to face cardinal planes."""
         cam_tf, cam = self._get_active_camera()
         if not cam_tf: return
         
-        rot = glm.vec3(0, 0, 0)
-        if axis == 'X': rot = glm.vec3(0, 90, 0)      
-        elif axis == '-X': rot = glm.vec3(0, -90, 0)  
-        elif axis == 'Y': rot = glm.vec3(-90, 0, 0)   
-        elif axis == '-Y': rot = glm.vec3(90, 0, 0)   
-        elif axis == 'Z': rot = glm.vec3(0, 0, 0)     
-        elif axis == '-Z': rot = glm.vec3(0, 180, 0)  
+        axis_rot_map = {
+            'X': glm.vec3(0, 90, 0), '-X': glm.vec3(0, -90, 0),
+            'Y': glm.vec3(-90, 0, 0), '-Y': glm.vec3(90, 0, 0),
+            'Z': glm.vec3(0, 0, 0), '-Z': glm.vec3(0, 180, 0)
+        }
         
+        rot = axis_rot_map.get(axis, glm.vec3(0,0,0))
         cam_tf.rotation = rot
         cam_tf.quat_rot = glm.quat(glm.radians(rot))
         
@@ -442,7 +476,7 @@ class InteractionManager:
         cam_tf.position = -forward * dist
 
     def get_screen_axis_labels_data(self, width: int, height: int) -> List[Dict[str, Any]]:
-        """Calculates screen-space positioning for the X/Y/Z orientation labels in the viewport UI."""
+        """Calculates screen-space positioning for X/Y/Z compass labels."""
         cam_tf, cam = self._get_active_camera()
         if not cam or not cam_tf: return []
         
@@ -451,10 +485,7 @@ class InteractionManager:
         pts_3d = [('X', glm.vec3(1.3, 0, 0)), ('Y', glm.vec3(0, 1.3, 0)), ('Z', glm.vec3(0, 0, 1.3)), 
                   ('-X', glm.vec3(-1.1, 0, 0)), ('-Y', glm.vec3(0, -1.1, 0)), ('-Z', glm.vec3(0, 0, -1.1))]
         
-        pad = HUD_AXIS_PADDING
-        scl = HUD_AXIS_SCALE
         labels_data = []
-        
         for name, pos in pts_3d:
             clip = axis_proj * (axis_view * glm.vec4(pos, 1.0))
             if clip.w > 0:
@@ -462,10 +493,9 @@ class InteractionManager:
                 labels_data.append({
                     'name': name, 
                     'z': ndc.z, 
-                    'x': int((width - pad) + ndc.x * scl - 5), 
-                    'y': int(pad - ndc.y * scl - (10 if name != "" else 4))
+                    'x': int((width - HUD_AXIS_PADDING) + ndc.x * HUD_AXIS_SCALE - 5), 
+                    'y': int(HUD_AXIS_PADDING - ndc.y * HUD_AXIS_SCALE - (10 if name != "" else 4))
                 })
                 
-        # Sort back-to-front for proper label depth rendering
         labels_data.sort(key=lambda item: item['z'], reverse=True)
         return labels_data

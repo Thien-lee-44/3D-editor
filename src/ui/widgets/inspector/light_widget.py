@@ -1,3 +1,9 @@
+"""
+Light Component Widget.
+Inspector panel for manipulating lighting parameters including intensity, 
+color modes (Basic/Advanced), attenuation, and spotlight cutoffs.
+"""
+
 import math
 from typing import Any, Dict
 from PySide6.QtWidgets import (QWidget, QHBoxLayout, QLabel, QCheckBox, 
@@ -17,6 +23,11 @@ from src.app.config import (
 )
 
 class LightWidget(BaseComponentWidget):
+    """
+    Inspector panel allowing the configuration of an entity's Light Component.
+    Dynamically adjusts visible fields based on the light type (Directional, Point, Spot).
+    """
+
     def __init__(self, controller: Any) -> None:
         super().__init__("Light", controller)
         
@@ -42,7 +53,10 @@ class LightWidget(BaseComponentWidget):
         self.layout.addLayout(row_l_type)
 
         flp = QFormLayout()
-        self.sp_light_int = SliderSpinBox(*LIGHT_INTENSITY_RANGE, 0.1, DEFAULT_LIGHT_INTENSITY, self.apply_light, press_callback=self.request_undo_snapshot)
+        self.sp_light_int = SliderSpinBox(
+            *LIGHT_INTENSITY_RANGE, 0.1, DEFAULT_LIGHT_INTENSITY, 
+            self.apply_light, press_callback=self.request_undo_snapshot
+        )
         flp.addRow("Intensity:", self.sp_light_int)
         self.layout.addLayout(flp)
 
@@ -119,6 +133,7 @@ class LightWidget(BaseComponentWidget):
         self.layout.addWidget(self.sun_hud_container)
 
     def update_data(self, ld: Dict[str, Any], mesh_visible: bool) -> None:
+        """Reconstructs the UI state based on the selected light's parameters."""
         self.cmb_light_type.blockSignals(True)
         self.cmb_light_type.setCurrentIndex(["Directional", "Point", "Spot"].index(ld["type"]) if ld["type"] in ["Directional", "Point", "Spot"] else 1)
         self.cmb_light_type.blockSignals(False)
@@ -177,11 +192,14 @@ class LightWidget(BaseComponentWidget):
         self.sp_l_quad.setValue(ld.get("quad", DEFAULT_LIGHT_QUADRATIC))
 
     def fast_update(self, ld: Dict[str, Any]) -> None:
-        if not ld or ld["type"] not in ["Directional", "Spot"]: return
+        """Targeted high-frequency update for directional/spot rotation logic."""
+        if not ld or ld["type"] not in ["Directional", "Spot"]: 
+            return
         self.sp_light_yaw.setValue(ld.get("yaw", 0.0))
         self.sp_light_pitch.setValue(ld.get("pitch", 0.0))
 
     def fast_update_rotation(self, rot_values: tuple) -> None:
+        """Safely synchronizes Pitch and Yaw sliders during viewport interactions."""
         self.sp_light_pitch.blockSignals(True)
         self.sp_light_yaw.blockSignals(True)
         self.sp_light_pitch.setValue(rot_values[0]) 
@@ -190,7 +208,9 @@ class LightWidget(BaseComponentWidget):
         self.sp_light_yaw.blockSignals(False)
 
     def apply_light(self) -> None:
-        if not self._controller: return
+        """Extracts general UI values and delegates the mutation to the Controller."""
+        if not self._controller: 
+            return
             
         self._controller.set_property("Light", "on", self.chk_light_on.isChecked())
         self._controller.set_property("Light", "intensity", self.sp_light_int.value())
@@ -212,17 +232,23 @@ class LightWidget(BaseComponentWidget):
             self._controller.set_property("Light", "outerCutOff", math.cos(math.radians(o)))
 
     def apply_light_proxy(self) -> None:
-        if not self._controller: return
+        """Toggles the visibility of the light proxy geometry."""
+        if not self._controller: 
+            return
         self._controller.set_property("Mesh", "visible", self.chk_light_proxy.isChecked())
 
     def switch_light_mode(self, idx: int) -> None:
-        if not self._controller: return
+        """Swaps the UI structure between basic multiplier mode and advanced per-channel mode."""
+        if not self._controller: 
+            return
         self._controller.set_property("Light", "use_advanced_mode", idx == 1)
         self.w_l_basic.setVisible(idx == 0)
         self.w_l_adv.setVisible(idx == 1)
 
     def apply_light_vec_colors(self) -> None:
-        if not self._controller: return
+        """Applies explicit RGB values to the light color channels."""
+        if not self._controller: 
+            return
         base_c = [s.value() for s in self.sp_light_base_vec]
         amb_c = [s.value() for s in self.sp_light_amb_vec]
         diff_c = [s.value() for s in self.sp_light_diff_vec]
@@ -239,9 +265,12 @@ class LightWidget(BaseComponentWidget):
         self.btn_l_spec_c.setStyleSheet(rgb_to_hex(spec_c))
 
     def pick_light_color(self, c_type: str) -> None:
+        """Initiates an OS-native color picking dialog for a specific light channel."""
         from src.app import ctx
         data = ctx.engine.get_selected_entity_data()
-        if not data or not data.get("light"): return
+        if not data or not data.get("light"): 
+            return
+            
         curr_c = data["light"].get(f"{c_type}_c", list(DEFAULT_LIGHT_COLOR))
         new_c = self._pick_color_with_dialog(curr_c)
         
@@ -259,5 +288,7 @@ class LightWidget(BaseComponentWidget):
             ctx.events.emit(AppEvent.SCENE_CHANGED)
 
     def apply_light_direction(self) -> None:
-        if not self._controller: return
+        """Explicitly mutates the light rotation based on Yaw and Pitch values."""
+        if not self._controller: 
+            return
         self._controller.update_light_direction(self.sp_light_yaw.value(), self.sp_light_pitch.value())

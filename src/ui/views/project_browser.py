@@ -1,6 +1,12 @@
+"""
+Project Browser Dialog.
+Provides a standalone UI window allowing users to open or delete saved projects.
+"""
+
 import os
 from typing import Any, Optional
-from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QListWidget, QPushButton, QMessageBox
+from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
+                               QListWidget, QPushButton, QMessageBox)
 
 from src.app.config import PROJECT_MANAGER_TITLE, PROJECT_MANAGER_MIN_SIZE
 
@@ -9,12 +15,13 @@ class ProjectBrowserDialog(QDialog):
     Popup dialog interface for selecting and managing saved projects.
     Handles scanning the project directory and dispatching user choices.
     """
+    
     def __init__(self, parent: Any, proj_dir: str) -> None:
         super().__init__(parent)
         self.setWindowTitle(PROJECT_MANAGER_TITLE)
         self.setMinimumSize(PROJECT_MANAGER_MIN_SIZE[0], PROJECT_MANAGER_MIN_SIZE[1])
         
-        self.proj_dir = proj_dir
+        self.proj_dir: str = proj_dir
         self.selected_path: Optional[str] = None
         
         layout = QVBoxLayout(self)
@@ -35,7 +42,7 @@ class ProjectBrowserDialog(QDialog):
         btn_layout.addWidget(self.btn_cancel)
         layout.addLayout(btn_layout)
         
-        # Binding UI logic
+        # Bind UI logic
         self.btn_open.clicked.connect(self.on_open)
         self.btn_del.clicked.connect(self.on_delete)
         self.btn_cancel.clicked.connect(self.reject)
@@ -66,6 +73,7 @@ class ProjectBrowserDialog(QDialog):
                 f"Are you sure you want to delete the project '{proj_name}'?\nThis action cannot be undone.",
                 QMessageBox.Yes | QMessageBox.No
             )
+            
             if ans == QMessageBox.Yes:
                 del_path = os.path.join(self.proj_dir, f"{proj_name}.json")
                 if os.path.exists(del_path):

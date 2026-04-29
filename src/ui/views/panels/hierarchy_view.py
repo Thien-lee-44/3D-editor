@@ -33,6 +33,7 @@ class HierarchyPanelView(BasePanel):
         self.tree_widget.customContextMenuRequested.connect(self._on_context_menu)
 
     def keyPressEvent(self, e: QKeyEvent) -> None:
+        """Handles custom keyboard shortcuts for hierarchy manipulation."""
         if not self._controller:
             super().keyPressEvent(e)
             return
@@ -184,4 +185,3 @@ class HierarchyPanelView(BasePanel):
 
         self.tree_widget.blockSignals(False)
         self._is_updating_externally = False
-

@@ -13,6 +13,7 @@ from PySide6.QtWidgets import QMessageBox, QApplication
 
 from src.app.exceptions import EngineError
 
+
 class ErrorDispatcher(QObject):
     """
     Thread-safe error dispatcher. 
@@ -58,8 +59,10 @@ class ErrorDispatcher(QObject):
         dialog.setInformativeText(message)
         dialog.exec()
 
+
 # Global singleton instance, strictly initialized AFTER QApplication
 global_error_handler: Optional[ErrorDispatcher] = None
+
 
 def init_global_error_handler() -> None:
     """Instantiates the dispatcher once the Qt Environment is ready."""
@@ -67,12 +70,13 @@ def init_global_error_handler() -> None:
     if global_error_handler is None:
         global_error_handler = ErrorDispatcher()
 
-def safe_execute(context: str = "Execution Error") -> Callable:
+
+def safe_execute(context: str = "Execution Error") -> Callable[..., Any]:
     """
     Decorator to wrap UI callbacks. Catches any unhandled exceptions 
     and forwards them to the centralized global error handler.
     """
-    def decorator(fn: Callable) -> Callable:
+    def decorator(fn: Callable[..., Any]) -> Callable[..., Any]:
         @functools.wraps(fn)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
             try:

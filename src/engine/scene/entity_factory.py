@@ -1,6 +1,12 @@
+"""
+Entity Factory.
+Implements the Abstract Factory design pattern for assembling complex Entity configurations 
+(Primitives, Lights, Cameras, External Models) and injecting them safely into the active scene.
+"""
+
 import os
 import glm
-from typing import Any, Optional, Dict, List
+from typing import Any, Dict, List
 from src.engine.scene.entity import Entity
 from src.engine.scene.components import TransformComponent, MeshRenderer, LightComponent, CameraComponent
 from src.engine.geometry.primitives import PrimitivesManager
@@ -9,27 +15,19 @@ from src.engine.graphics.buffer_objects import BufferObject
 
 from src.app.exceptions import SimulationError, ResourceError
 from src.app.config import (
-    MAX_LIGHTS,
-    DEFAULT_GROUP_NAME,
-    DEFAULT_PROXY_SCALE,
-    DEFAULT_CAMERA_NAME,
-    DEFAULT_SCENE_CAM_POS,
-    DEFAULT_SCENE_LIGHT_ROT,
+    MAX_LIGHTS, DEFAULT_GROUP_NAME, DEFAULT_PROXY_SCALE, 
+    DEFAULT_CAMERA_NAME, DEFAULT_SCENE_CAM_POS, DEFAULT_SCENE_LIGHT_ROT
 )
 
 class EntityFactory:
-    """
-    Implements the Abstract Factory design pattern for assembling complex Entity configurations 
-    (Primitives, Lights, Cameras, External Models) and injecting them safely into the active scene.
-    """
+    """Assembles and configures entities before pushing them to the Scene Manager."""
     
     def __init__(self, scene: Any) -> None:
         self.scene = scene
 
     def setup_default_scene(self) -> None:
-        """
-        Creates the default camera, default directional light, and default cube.
-        """
+        """Creates the default camera, default directional light, and a default primitive."""
+        # Setup Default Camera
         cam = Entity(DEFAULT_CAMERA_NAME)
         tf = cam.add_component(TransformComponent())
         tf.position = glm.vec3(*DEFAULT_SCENE_CAM_POS)
@@ -50,9 +48,9 @@ class EntityFactory:
                 geom = BufferObject(sub.vertices, sub.indices, sub.vertex_size)
                 geom.filepath = proxy_path
                 renderer.geometry = geom
-
         self.scene.add_entity(cam)
 
+        # Setup Default Directional Light
         light = Entity("Directional Light")
         tf = light.add_component(TransformComponent())
         tf.rotation = glm.vec3(*DEFAULT_SCENE_LIGHT_ROT)
@@ -60,6 +58,7 @@ class EntityFactory:
         light.add_component(LightComponent(light_type="Directional"))
         self.scene.add_entity(light)
 
+        # Setup Default Geometry
         cube_entity = Entity("Default Cube")
         cube_entity.add_component(TransformComponent())
         renderer = cube_entity.add_component(MeshRenderer())
@@ -77,18 +76,15 @@ class EntityFactory:
     def spawn_primitive(self, name: str, is_2d: bool) -> None:
         """Instantiates an entity equipped with a foundational geometric mesh."""
         geom = PrimitivesManager.get_primitive(name, is_2d)
-        
         if geom:
             ent = Entity(name)
             ent.add_component(TransformComponent())
-            
             renderer = ent.add_component(MeshRenderer())
             renderer.geometry = geom
             
-            # Apply default material assignments defined natively within the primitive payload
+            # Apply default material assignments natively mapped within the primitive payload
             if hasattr(geom, 'materials') and 'default_active' in geom.materials:
                 renderer.material.setup_from_dict(geom.materials['default_active'])
-                
             self.scene.add_entity(ent)
 
     def spawn_math_surface(self, formula: str, xmin: float, xmax: float, ymin: float, ymax: float, res: int) -> None:
@@ -106,7 +102,7 @@ class EntityFactory:
         self.scene.add_entity(ent)
 
     def add_light(self, light_type: str, proxy_enabled: bool, global_light_on: bool) -> None:
-        """Instantiates a light source. Lights are NEVER given a SemanticComponent."""
+        """Instantiates a light source with strict limits based on the hardware profile."""
         current_count = sum(1 for _, l, _ in self.scene.cached_lights if l.type == light_type)
         limit = MAX_LIGHTS.get(light_type, 0)
         
@@ -124,28 +120,24 @@ class EntityFactory:
             renderer.is_proxy = True
             renderer.visible = proxy_enabled
 
-            # Lock only proxy transform modes (do not lock regular entities/groups)
+            # Lock proxy transform modes to prevent invalid distortion
             if light_type == "Point":
                 tf.locked_axes["rot"] = True
                 tf.locked_axes["scl"] = True
+                renderer.geometry = PrimitivesManager.get_proxy("proxy_point.ply")
             elif light_type == "Spot":
                 tf.locked_axes["scl"] = True
-            
-            if light_type == "Point": 
-                renderer.geometry = PrimitivesManager.get_proxy("proxy_point.ply")
-                tf.scale = glm.vec3(DEFAULT_PROXY_SCALE)
-            elif light_type == "Spot": 
                 renderer.geometry = PrimitivesManager.get_proxy("proxy_spot.ply")
-                tf.scale = glm.vec3(DEFAULT_PROXY_SCALE)
+                
+            tf.scale = glm.vec3(DEFAULT_PROXY_SCALE)
                 
         self.scene.add_entity(ent)
 
     def add_camera(self, proxy_enabled: bool) -> None:
-        """Instantiates an auxiliary view frustum. Cameras are NEVER given a SemanticComponent."""
+        """Instantiates an auxiliary view frustum."""
         ent = Entity("Camera")
         tf = ent.add_component(TransformComponent())
-        tf.locked_axes["scl"] = True  # [CONSTRAINT]
-        
+        tf.locked_axes["scl"] = True 
         
         cam = ent.add_component(CameraComponent(mode="Perspective"))
         cam.is_active = not any(e.get_component(CameraComponent) for e in self.scene.entities)
@@ -162,8 +154,7 @@ class EntityFactory:
         """
         Parses a 3D asset and assembles a hierarchical structure.
         Automatically calculates the group center to align Gizmos with the collective children.
-        Optimized to reuse cached OpenGL BufferObjects directly, preventing memory leaks 
-        and fixing disappearing mesh bugs.
+        Optimized to reuse cached OpenGL BufferObjects directly, preventing memory leaks.
         """
         try:
             mesh_data_list = ResourceManager.get_model(path)
@@ -191,8 +182,6 @@ class EntityFactory:
             master_tf = master_ent.add_component(TransformComponent())
             master_tf.position = master_center 
             
-            
-            # [CRITICAL FIX]: Collect all structured entities first before flushing to Scene
             entities_to_add = [master_ent]
 
             for g_name, meshes in buckets.items():
@@ -207,7 +196,6 @@ class EntityFactory:
                 obj_tf = obj_ent.add_component(TransformComponent())
                 obj_tf.position = obj_world_center - master_center
                 
-                
                 master_ent.add_child(obj_ent, keep_world=False)
                 entities_to_add.append(obj_ent)
 
@@ -217,11 +205,9 @@ class EntityFactory:
                         child_tf = child_ent.add_component(TransformComponent())
                         child_tf.position = glm.vec3(*sub_data.pivot_offset) - obj_world_center
                         
-                        
                         renderer = child_ent.add_component(MeshRenderer())
                         
-                        # [CRITICAL FIX]: Directly reference the cached Geometry.
-                        # Do NOT call BufferObject() here, as it duplicates RAM/VRAM and crashes GL State.
+                        # Direct assignment to prevent duplicate BufferObject instantiation
                         renderer.geometry = sub_data 
                         
                         if hasattr(sub_data, 'materials') and 'default_active' in sub_data.materials:
@@ -231,8 +217,6 @@ class EntityFactory:
                         entities_to_add.append(child_ent)
                     else:
                         renderer = obj_ent.add_component(MeshRenderer())
-                        
-                        # [CRITICAL FIX]: Directly reference the cached Geometry.
                         renderer.geometry = sub_data
                         
                         if hasattr(sub_data, 'materials') and 'default_active' in sub_data.materials:

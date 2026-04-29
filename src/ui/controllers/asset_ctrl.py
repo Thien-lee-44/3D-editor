@@ -1,3 +1,9 @@
+"""
+Asset Browser Controller.
+Manages the import, caching, deletion, and scene-instantiation workflows for 
+external textures and 3D models.
+"""
+
 from PySide6.QtWidgets import QProgressDialog, QApplication
 from PySide6.QtCore import Qt, QEventLoop
 
@@ -9,7 +15,7 @@ from src.ui.views.panels.asset_view import AssetBrowserPanelView
 class AssetController:
     """
     Coordinates data flow for the Asset Browser panel.
-    Handles the asynchronous loading and instantiation of external 3D models and textures.
+    Handles the asynchronous loading and initialization of external dependencies.
     """
     def __init__(self) -> None:
         self.view = AssetBrowserPanelView(controller=self)
@@ -17,17 +23,20 @@ class AssetController:
         ctx.events.subscribe(AppEvent.ENTITY_SELECTED, self.on_global_selection)
 
     def refresh_view(self) -> None:
+        """Triggers the UI to rebuild its grid layout based on the engine's asset manifest."""
         models = ctx.engine.get_project_models()
         textures = ctx.engine.get_project_textures()
         self.view.build_asset_lists(models, textures)
 
     def on_global_selection(self, entity_id: int) -> None:
+        """Cross-references the active entity to highlight its base texture in the browser."""
         data = ctx.engine.get_selected_entity_data()
         path_to_find = data["mesh"]["tex_paths"].get("map_diffuse", "") if data and data.get("mesh") else ""
         self.view.highlight_texture(path_to_find)
 
     @safe_execute(context="Import Model")
     def import_model(self, path: str) -> None:
+        """Parses a 3D model into the VRAM cache without instantiating it into the scene."""
         file_name = path.split('/')[-1] if '/' in path else path.split('\\')[-1]
         
         progress = QProgressDialog(f"Loading model into memory: {file_name}", None, 0, 0, ctx.main_window)
@@ -54,11 +63,13 @@ class AssetController:
 
     @safe_execute(context="Import Texture")
     def import_texture(self, path: str) -> None:
+        """Registers a texture into the project manifest."""
         ctx.engine.import_project_texture(path)
         ctx.events.emit(AppEvent.ASSET_BROWSER_NEEDS_REFRESH)
 
     @safe_execute(context="Delete Asset")
     def request_delete_asset(self, path: str, asset_type: str) -> None:
+        """Validates dependency limits before removing an asset from the project."""
         if asset_type == 'TEXTURE' and ctx.engine.is_texture_in_use(path):
             raise SimulationError("Cannot delete: Texture is currently applied to a material in the scene!")
             
@@ -67,6 +78,7 @@ class AssetController:
 
     @safe_execute(context="Spawn Model")
     def spawn_model(self, path: str) -> None:
+        """Spawns an instantiated clone of a cached model into the Scene Graph."""
         file_name = path.split('/')[-1] if '/' in path else path.split('\\')[-1]
         
         progress = QProgressDialog(f"Instantiating model: {file_name}", None, 0, 0, ctx.main_window)
@@ -97,6 +109,7 @@ class AssetController:
 
     @safe_execute(context="Apply Texture")
     def apply_texture(self, path: str, map_attr: str) -> None:
+        """Assigns an active texture pointer to the selected entity's material slot."""
         if ctx.engine.get_selected_entity_id() < 0:
             raise SimulationError("Please select an entity in the scene first!")
             

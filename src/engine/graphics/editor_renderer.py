@@ -1,8 +1,14 @@
+"""
+Editor-Specific Rendering Subsystem.
+Handles the rendering of interactive 3D transformation manipulators (Gizmos), 
+directional light proxies, and viewport orientation compasses.
+"""
+
 import glm
-from OpenGL.GL import *
 import math
 import numpy as np
 import ctypes
+from OpenGL.GL import *
 from typing import Any, Optional
 
 from src.engine.resources.resource_manager import ResourceManager
@@ -14,7 +20,13 @@ from src.app.config import (
     GIZMO_COLOR_HOVER, GIZMO_COLOR_CORE, HUD_COMPASS_SIZE, HUD_COMPASS_OFFSET
 )
 
+
 class GizmoRenderer:
+    """
+    Renders 3D transformation manipulators (Translate, Rotate, Scale) 
+    and the screen-space orientation compass for the active viewport.
+    """
+    
     def __init__(self) -> None:
         self.solid_shader = ResourceManager.get_shader("editor_solid")
         self.gizmo_cube = PrimitivesManager.get_primitive("Cube")
@@ -23,6 +35,7 @@ class GizmoRenderer:
         self._setup_circle_vbo()
 
     def _setup_circle_vbo(self) -> None:
+        """Generates a hardware buffer for a 2D unit circle used by rotation gizmos."""
         self.circle_segments = GIZMO_RING_SEGMENTS
         pts = []
         for i in range(self.circle_segments):
@@ -43,6 +56,10 @@ class GizmoRenderer:
         glBindVertexArray(0)
 
     def render(self, scene: Any, active_camera: Optional[CameraComponent], camera_tf: Optional[TransformComponent], window_w: int, window_h: int, active_axis: str) -> None:
+        """
+        Draws the interactive manipulation gizmo at the target transform's world position.
+        Adjusts scale dynamically to maintain a constant screen-space size.
+        """
         if not active_camera or not camera_tf: 
             return
             
@@ -58,6 +75,7 @@ class GizmoRenderer:
             
             is_visible = sel_renderer.visible if sel_renderer else True
 
+            # Prevent rendering the gizmo if the selected entity is the active camera
             if sel_cam and sel_cam == active_camera:
                 is_visible = False
 
@@ -75,6 +93,7 @@ class GizmoRenderer:
                     g_pos = sel_tf.global_position
                     g_rot = sel_tf.global_quat_rot
 
+                    # Consistent pixel-size scaling logic
                     pixel_factor = 100.0 / max(window_h, 1.0) 
                     if active_camera.mode == "Perspective":
                         dist = glm.length(camera_tf.global_position - g_pos)
@@ -166,6 +185,7 @@ class GizmoRenderer:
             axis_proj = glm.perspective(glm.radians(45.0), 1.0, 0.1, 10.0)
             
             def draw_corner_arrow(axis_char: str, color: glm.vec3) -> None:
+                """Helper to render individual axes on the orientation compass."""
                 self.solid_shader.set_vec3("solidColor", color)
                 mat = glm.mat4(1.0)
                 
@@ -197,6 +217,11 @@ class GizmoRenderer:
 
 
 class HUDRenderer:
+    """
+    Handles rendering for the directional light (Sun) manipulator HUD, 
+    drawn in an isolated off-screen context.
+    """
+    
     def __init__(self) -> None:
         self.solid_shader = ResourceManager.get_shader("editor_solid")
         self.proxy_shader = ResourceManager.get_shader("editor_proxy")
@@ -248,6 +273,10 @@ class HUDRenderer:
             glBindVertexArray(0)
 
     def render(self, w: int, h: int, active_axis: str, is_hover: bool, target_tf: TransformComponent, view_matrix: glm.mat4) -> None:
+        """
+        Executes the render pass for the Sun HUD, overlaying the rotation rings 
+        and proxy mesh onto the isolated viewport.
+        """
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
         
         hud_view = glm.translate(glm.mat4(1.0), glm.vec3(0, 0, -2.5)) * view_matrix

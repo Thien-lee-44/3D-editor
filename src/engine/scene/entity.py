@@ -1,6 +1,11 @@
+"""
+Entity Component System (ECS) Core.
+Defines the foundational Entity and Component structures for the 3D Scene Graph.
+"""
+
 import glm
 import copy
-from typing import List, Optional, Type, TypeVar, Any
+from typing import List, Optional, Type, TypeVar
 
 from src.app.config import DEFAULT_ENTITY_NAME
 
@@ -9,8 +14,8 @@ T = TypeVar('T', bound='Component')
 
 class Component:
     """
-    Abstract base class for all functional modules in the Entity-Component System (ECS).
-    Components strictly hold data and specific logic, while Entities act as generic containers.
+    Abstract base class for all functional modules in the ECS.
+    Components hold specific data and logic, while Entities act as generic containers.
     """
     def __init__(self) -> None:
         self.entity: Optional['Entity'] = None 
@@ -18,8 +23,7 @@ class Component:
 class Entity:
     """
     Represents a discrete hierarchical node within the 3D Scene Graph.
-    Acts as a container for Components and manages parent-child relationships 
-    to propagate spatial transformations downstream.
+    Manages parent-child relationships to propagate spatial transformations downstream.
     """
     def __init__(self, name: str = DEFAULT_ENTITY_NAME, is_group: bool = False) -> None:
         self.name: str = name
@@ -35,10 +39,7 @@ class Entity:
         return component
         
     def get_component(self, comp_type: Type[T]) -> Optional[T]:
-        """
-        Scans attached components and returns the first match of the requested type.
-        Utilizes type generics for seamless IDE autocomplete support.
-        """
+        """Scans attached components and returns the first match of the requested type."""
         for c in self.components:
             if isinstance(c, comp_type): 
                 return c
@@ -46,9 +47,9 @@ class Entity:
 
     def add_child(self, child: 'Entity', keep_world: bool = False) -> None:
         """
-        Establishes a parent-child relationship between this entity and the specified child.
-        If keep_world is True, the child's local transform is mathematically recalculated 
-        to ensure its absolute visual position in the 3D world remains identical.
+        Establishes a parent-child relationship.
+        If keep_world is True, recalculates the child's local transform to preserve 
+        its absolute world-space visual position.
         """
         if not self.is_group:
             return 
@@ -82,7 +83,6 @@ class Entity:
     def remove_child(self, child: 'Entity', keep_world: bool = False) -> None:
         """
         Severs the hierarchical link between this entity and the specified child.
-        Can optionally preserve the child's absolute world-space transform.
         """
         if child in self.children:
             from src.engine.scene.components import TransformComponent

@@ -1,4 +1,5 @@
 import os
+from typing import List
 from PySide6.QtWidgets import (QVBoxLayout, QHBoxLayout, QGroupBox, QPushButton, 
                                QFileDialog, QMessageBox, QMenu, QListWidgetItem, QListWidget)
 from PySide6.QtCore import Qt
@@ -9,6 +10,7 @@ from src.ui.widgets.custom_lists import AssetListWidget
 
 # Import SSOT configuration
 from src.app.config import TEXTURE_CHANNELS, PANEL_TITLE_ASSET, DEFAULT_UI_MARGIN
+
 
 class AssetBrowserPanelView(BasePanel):
     """
@@ -48,7 +50,7 @@ class AssetBrowserPanelView(BasePanel):
         self.list_models.itemDoubleClicked.connect(self._on_model_double_clicked)
         self.list_tex.itemDoubleClicked.connect(self._on_texture_double_clicked)
 
-    def _populate_list_widget(self, widget: QListWidget, file_paths: list[str], is_texture: bool = False) -> None:
+    def _populate_list_widget(self, widget: QListWidget, file_paths: List[str], is_texture: bool = False) -> None:
         """Utility function to populate lists and handle duplicate filenames gracefully."""
         widget.clear()
         counts = {}
@@ -69,7 +71,7 @@ class AssetBrowserPanelView(BasePanel):
                 item.setIcon(QIcon(path))
             widget.addItem(item)
 
-    def build_asset_lists(self, models: list[str], textures: list[str]) -> None:
+    def build_asset_lists(self, models: List[str], textures: List[str]) -> None:
         """Rebuilds both the model and texture lists based on the active project state."""
         self._populate_list_widget(self.list_models, models, is_texture=False)
         self._populate_list_widget(self.list_tex, textures, is_texture=True)
@@ -77,7 +79,8 @@ class AssetBrowserPanelView(BasePanel):
     def highlight_texture(self, path_to_find: str) -> None:
         """Highlights a specific texture in the list, typically triggered when an entity is selected."""
         self.list_tex.clearSelection()
-        if not path_to_find: return
+        if not path_to_find: 
+            return
         
         for i in range(self.list_tex.count()):
             item = self.list_tex.item(i)
@@ -98,13 +101,15 @@ class AssetBrowserPanelView(BasePanel):
 
     def _on_model_double_clicked(self, item: QListWidgetItem) -> None:
         """Directly dispatches the spawn command to the Controller."""
-        if not self._controller: return
+        if not self._controller: 
+            return
         path = item.data(Qt.UserRole)
         self._controller.spawn_model(path)
 
     def _on_texture_double_clicked(self, item: QListWidgetItem) -> None:
         """Opens a contextual menu allowing the user to select which material channel to map the texture to."""
-        if not self._controller: return
+        if not self._controller: 
+            return
         path = item.data(Qt.UserRole)
         
         menu = QMenu(self)
@@ -116,7 +121,8 @@ class AssetBrowserPanelView(BasePanel):
             action.setData(attr_name)
         
         action_selected = menu.exec(QCursor.pos())
-        if not action_selected: return
+        if not action_selected: 
+            return
         
         map_attr = action_selected.data()
         self._controller.apply_texture(path, map_attr)

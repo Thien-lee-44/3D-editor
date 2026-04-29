@@ -1,13 +1,21 @@
+"""
+Forward Rendering Pipeline.
+Main execution pipeline for the Forward Rendering architecture.
+Handles illumination passes and Off-screen GPU Color Picking via Framebuffer Objects (FBO).
+"""
+
 import glm
 import ctypes
 from OpenGL.GL import *
-from typing import Any, Optional
+from typing import Any, Optional, List, Tuple
+
 from src.engine.resources.resource_manager import ResourceManager
 from src.engine.scene.components import CameraComponent
 from src.engine.scene.scene import Scene
 from src.app.exceptions import RenderError
 from src.app.config import MAX_LIGHTS
 from src.engine.graphics.render_queue import RenderQueue
+
 
 class Renderer:
     """
@@ -25,6 +33,7 @@ class Renderer:
         
         self.queue = RenderQueue()
         
+        # Render State Flags
         self.wireframe: bool = False
         self.render_mode: int = 4 
         self.output_type: int = 0  
@@ -40,9 +49,11 @@ class Renderer:
         self.picking_height: int = 0
 
     def toggle_wireframe(self) -> None:
+        """Toggles the global wireframe rendering mode."""
         self.wireframe = not self.wireframe
 
     def set_render_settings(self, wireframe: bool, mode: int, output: int, light: bool, tex: bool, vcolor: bool) -> None:
+        """Updates the global rendering pipeline configuration."""
         self.wireframe = wireframe
         self.render_mode = mode
         self.output_type = output
@@ -51,6 +62,10 @@ class Renderer:
         self.comb_vcolor = vcolor
 
     def render_scene(self, scene: Any, window_w: int, window_h: int) -> None:
+        """
+        Executes the full rendering cycle: resolves the active camera, builds the 
+        render queues, applies lighting uniforms, and dispatches OpenGL draw calls.
+        """
         if not scene: 
             return
             
@@ -61,6 +76,7 @@ class Renderer:
         view_matrix = glm.mat4(1.0)
         projection_matrix = glm.mat4(1.0)
         
+        # Resolve active camera constraints
         for tf, cam, ent in scene.cached_cameras:
             if cam.is_active:
                 active_camera = cam
@@ -72,6 +88,7 @@ class Renderer:
         if not active_camera: 
             return
 
+        # Sort renderables into opaque, transparent, and proxy queues
         self.queue.build(scene, cam_pos)
 
         is_depth_pass = (self.output_type == 1)
@@ -108,6 +125,7 @@ class Renderer:
                 max_point = MAX_LIGHTS.get("Point", 16)
                 max_spot = MAX_LIGHTS.get("Spot", 8)
                 
+                # Setup lighting uniforms
                 for tf, light, ent in scene.cached_lights:
                     if not light.on: 
                         continue
@@ -151,7 +169,7 @@ class Renderer:
                 active_shader.set_int("numPointLights", num_point)
                 active_shader.set_int("numSpotLights", num_spot)
 
-        def draw_list(item_list, force_depth_write=True):
+        def draw_list(item_list: List[Any], force_depth_write: bool = True) -> None:
             """Executes rendering instructions for a categorized list of components."""
             current_mat_id = -1
             
@@ -160,19 +178,15 @@ class Renderer:
                 active_shader.set_mat4("model", model_mat)
                 
                 if not is_depth_pass and not is_unlit_pass:
-                    # Optimization Note: Future iterations should calculate the Normal Matrix 
-                    # inside the Vertex Shader to offload matrix inversion from the CPU.
                     det = glm.determinant(glm.mat3(model_mat))
                     normal_mat = glm.transpose(glm.inverse(glm.mat3(model_mat))) if abs(det) > 1e-6 else glm.mat3(1.0)
                     active_shader.set_mat3("normalMatrix", normal_mat)
                 
                 if mesh.material:
-                    # Inject uniform/texture bindings only if the material changes (Leveraging RenderQueue sorting)
                     if id(mesh.material) != current_mat_id and not is_depth_pass:
                         mesh.material.apply(active_shader)
                         current_mat_id = id(mesh.material)
                     
-                    # Apply OpenGL Render States based on discrete material settings
                     r_state = mesh.material.render_state
                     
                     if r_state.cull_face:
@@ -187,7 +201,6 @@ class Renderer:
                     else:
                         glDisable(GL_DEPTH_TEST)
                         
-                    # Override depth mask based on Queue type (Transparent passes disable Z-writes)
                     glDepthMask(GL_TRUE if force_depth_write and r_state.depth_write else GL_FALSE)
                     
                 geom_obj = getattr(mesh.geometry, 'mesh', mesh.geometry)
@@ -202,7 +215,7 @@ class Renderer:
         if not is_depth_pass:
             draw_list(self.queue.transparent, force_depth_write=False)
             
-        # Restore default global GL states to prevent interference with subsequent Gizmo/HUD rendering passes
+        # Restore default global GL states
         glDepthMask(GL_TRUE)
         glEnable(GL_CULL_FACE)
         glCullFace(GL_BACK)
@@ -210,12 +223,11 @@ class Renderer:
             
         self._render_proxies(view_matrix, projection_matrix, active_camera)
 
-    def _render_proxies(self, view_matrix: glm.mat4, projection_matrix: glm.mat4, active_camera: CameraComponent) -> None:
+    def _render_proxies(self, view_matrix: glm.mat4, projection_matrix: glm.mat4, active_camera: Optional[CameraComponent]) -> None:
         """Renders editor-only wireframes and functional visualizers (Lights/Cameras)."""
         glPolygonMode(GL_FRONT_AND_BACK, GL_FILL)
         
         for tf, mesh, ent in self.queue.proxies:
-            # Prevent rendering the proxy of the currently active viewpoint
             if active_camera and ent.get_component(type(active_camera)) == active_camera:
                 continue 
                 
@@ -315,7 +327,7 @@ class Renderer:
         self.pass_picking_shader.set_mat4("view", view_matrix)
         self.pass_picking_shader.set_mat4("projection", projection_matrix)
 
-        def draw_picking_list(item_list):
+        def draw_picking_list(item_list: List[Any]) -> None:
             for tf, mesh, ent in item_list:
                 ent_idx = scene.entities.index(ent)
                 if ent_idx == cam_idx:
@@ -347,7 +359,6 @@ class Renderer:
         glEnable(GL_BLEND)
         glEnable(GL_MULTISAMPLE)
 
-        # Preserve the precise data unpacking format to avoid PyOpenGL compatibility bugs
         if pixel_data:
             r, g, b, a = pixel_data[0], pixel_data[1], pixel_data[2], pixel_data[3]
             

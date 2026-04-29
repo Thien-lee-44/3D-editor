@@ -1,22 +1,25 @@
-import os
+"""
+Texture Loader.
+Decodes image files and provisions OpenGL texture objects into VRAM.
+"""
+
+from pathlib import Path
 from OpenGL.GL import *
 from PIL import Image
 
 from src.app.exceptions import ResourceError
 
 class TextureLoader:
-    """
-    Handles loading and decoding of image files into OpenGL texture objects.
-    """
+    """Handles image I/O and OpenGL texture state configuration."""
     
     @staticmethod
-    def load(filepath: str) -> int:
+    def load(filepath_str: str) -> int:
         """
-        Loads an image from disk, uploads it to VRAM, and configures texture parameters.
+        Loads an image, uploads it to VRAM, and configures trilinear filtering parameters.
         Returns the generated OpenGL Texture ID.
-        Raises ResourceError if the file is missing or corrupted.
         """
-        if not os.path.exists(filepath):
+        filepath = Path(filepath_str)
+        if not filepath.exists():
             raise ResourceError(f"Texture file not found on disk: '{filepath}'")
             
         try:
@@ -34,11 +37,11 @@ class TextureLoader:
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT)
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT)
             
-            # Configure filtering parameters (Trilinear filtering setup)
+            # Configure filtering parameters (Trilinear mapping)
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR)
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
             
-            # Upload image data to the GPU and generate mipmaps for LOD scaling
+            # Upload image data to the GPU and generate mipmaps
             glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, img_data)
             glGenerateMipmap(GL_TEXTURE_2D)
             
@@ -48,5 +51,4 @@ class TextureLoader:
             return texture_id
             
         except Exception as e:
-            # STRICT RULE: Raise domain exception instead of logging or returning 0
             raise ResourceError(f"Failed to decode texture data from '{filepath}'.\nReason: {e}")

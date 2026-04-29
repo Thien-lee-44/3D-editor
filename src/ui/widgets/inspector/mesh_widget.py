@@ -1,3 +1,9 @@
+"""
+Mesh & Material Component Widget.
+Inspector panel managing surface rendering properties, multi-texturing configurations, 
+and basic material color mapping.
+"""
+
 import os
 from typing import Any, Dict
 from PySide6.QtWidgets import (QWidget, QHBoxLayout, QLabel, QCheckBox, 
@@ -18,10 +24,15 @@ from src.app.config import (
 )
 
 class MeshWidget(BaseComponentWidget):
+    """
+    Inspector panel allowing the configuration of an entity's physical geometry 
+    properties and rendering materials.
+    """
+
     def __init__(self, controller: Any) -> None:
         super().__init__("Mesh & Material", controller)
-        self.tex_labels = {}
-        self.pixmap_cache = {}
+        self.tex_labels: Dict[str, tuple] = {}
+        self.pixmap_cache: Dict[str, QPixmap] = {}
         
         self.chk_visible = QCheckBox("Visible")
         self.chk_visible.clicked.connect(self.request_undo_snapshot)
@@ -91,6 +102,7 @@ class MeshWidget(BaseComponentWidget):
         self.layout.addWidget(self.group_tex)
 
     def _build_tex_slot(self, parent_layout: QVBoxLayout, label_text: str, map_attr: str) -> None:
+        """Assembles a dedicated UI row for a single texture mapping slot."""
         row = QHBoxLayout()
         lbl = QLabel(f"{label_text}:")
         lbl.setMinimumWidth(110)
@@ -122,6 +134,7 @@ class MeshWidget(BaseComponentWidget):
         self.tex_labels[map_attr] = (lbl_status, lbl_thumb)
 
     def update_data(self, mesh_d: Dict[str, Any]) -> None:
+        """Reconstructs the UI state based on the selected mesh's material parameters."""
         self.chk_visible.blockSignals(True)
         self.chk_visible.setChecked(mesh_d.get("visible", True))
         self.chk_visible.blockSignals(False)
@@ -168,7 +181,9 @@ class MeshWidget(BaseComponentWidget):
                 lbl_thumb.setText("")
 
     def apply_mesh(self) -> None:
-        if not self._controller: return
+        """Extracts general UI values and delegates the mutation to the Controller."""
+        if not self._controller: 
+            return
         self._controller.set_property("Mesh", "visible", self.chk_visible.isChecked())
         self._controller.set_property("Mesh", "mat_ambient_strength", self.sp_mat_amb.value())
         self._controller.set_property("Mesh", "mat_diffuse_strength", self.sp_mat_diff.value())
@@ -177,7 +192,9 @@ class MeshWidget(BaseComponentWidget):
         self._controller.set_property("Mesh", "mat_opacity", self.sp_opacity.value())
 
     def apply_mat_vec_colors(self) -> None:
-        if not self._controller: return
+        """Applies explicit RGB values to the material color channels."""
+        if not self._controller: 
+            return
         base_c = [s.value() for s in self.sp_mat_base_vec]
         amb_c = [s.value() for s in self.sp_mat_amb_vec]
         diff_c = [s.value() for s in self.sp_mat_diff_vec]
@@ -197,15 +214,19 @@ class MeshWidget(BaseComponentWidget):
         self.btn_mat_emis.setStyleSheet(rgb_to_hex(emis_c))
 
     def switch_mat_mode(self, idx: int) -> None:
-        if not self._controller: return
+        """Swaps the UI structure between basic multiplier mode and advanced per-channel mode."""
+        if not self._controller: 
+            return
         self._controller.set_property("Mesh", "mat_use_advanced_mode", idx == 1)
         self.w_mat_basic.setVisible(idx == 0)
         self.w_mat_adv.setVisible(idx == 1)
 
     def pick_mat_color(self, c_type: str) -> None:
+        """Initiates an OS-native color picking dialog for a specific material channel."""
         from src.app import ctx
         data = ctx.engine.get_selected_entity_data()
-        if not data or not data.get("mesh"): return
+        if not data or not data.get("mesh"): 
+            return
             
         default_color = list(DEFAULT_MAT_BASE_COLOR) if c_type == 'base' else (list(DEFAULT_MAT_EMISSION) if c_type == 'emis' else list(DEFAULT_MAT_AMBIENT))
         curr_c = data["mesh"].get(f"{c_type}_c", default_color)
@@ -225,10 +246,12 @@ class MeshWidget(BaseComponentWidget):
             ctx.events.emit(AppEvent.SCENE_CHANGED)
 
     def load_texture_map(self, map_attr: str) -> None:
+        """Opens a file dialog to assign a texture to a specific slot."""
         path, _ = QFileDialog.getOpenFileName(self, "Select Texture", "", "Images (*.png *.jpg *.jpeg)")
         if path and self._controller:
             self._controller.load_texture(map_attr, path)
 
     def remove_texture_map(self, map_attr: str) -> None:
+        """Clears a texture mapping slot."""
         if self._controller: 
             self._controller.remove_texture(map_attr)

@@ -1,5 +1,11 @@
+"""
+Project Lifecycle Controller.
+Manages application-level workflows including Undo/Redo history, JSON Project Save/Load,
+and routing external format exports (e.g., OBJ).
+"""
+
 import os
-from typing import Optional
+from typing import Optional, List
 from PySide6.QtWidgets import QFileDialog, QMessageBox, QInputDialog, QDialog, QProgressDialog, QApplication, QProgressBar
 from PySide6.QtCore import Qt, QEventLoop
 
@@ -9,22 +15,26 @@ from src.ui.views.project_browser import ProjectBrowserDialog
 
 class ProjectController:
     """
-    Manages the application lifecycle workflow: Undo/Redo, Save/Load JSON, and Export OBJ.
+    Governs the overarching workspace state, memory snapshots, and disk persistence.
     """
+    
     def __init__(self) -> None:
-        self.projects_dir = config.PROJECTS_DIR
+        self.projects_dir: str = config.PROJECTS_DIR
         os.makedirs(self.projects_dir, exist_ok=True)
             
         self.current_project_name: Optional[str] = None
-        self.undo_stack: list[str] = []
-        self.redo_stack: list[str] = []
-        self.max_history = config.MAX_UNDO_HISTORY
-        self.is_restoring = False 
+        self.undo_stack: List[str] = []
+        self.redo_stack: List[str] = []
+        self.max_history: int = config.MAX_UNDO_HISTORY
+        self.is_restoring: bool = False 
         
         ctx.events.subscribe(AppEvent.ACTION_BEFORE_MUTATION, self.record_history)
 
     def _update_window_title(self) -> None:
-        if not hasattr(ctx, 'main_window'): return
+        """Updates the main window title to reflect the active project's status."""
+        if not hasattr(ctx, 'main_window'): 
+            return
+            
         base_title = config.APP_TITLE
         if self.current_project_name:
             ctx.main_window.setWindowTitle(f"{base_title} - [{self.current_project_name}]")
@@ -32,9 +42,13 @@ class ProjectController:
             ctx.main_window.setWindowTitle(f"{base_title} - [Unsaved]")
 
     def record_history(self) -> None:
-        if self.is_restoring: return
+        """Captures a serialized JSON snapshot of the scene graph for the Undo stack."""
+        if self.is_restoring: 
+            return
+            
         snapshot = ctx.engine.get_scene_snapshot()
-        if self.undo_stack and self.undo_stack[-1] == snapshot: return
+        if self.undo_stack and self.undo_stack[-1] == snapshot: 
+            return
         
         self.undo_stack.append(snapshot)
         if len(self.undo_stack) > self.max_history: 
@@ -45,7 +59,10 @@ class ProjectController:
 
     @safe_execute(context="Undo / Redo Restoration")
     def restore_snapshot(self, snapshot_str: str) -> None:
-        if not snapshot_str: return
+        """Reconstructs the Scene Graph from a serialized memory string."""
+        if not snapshot_str: 
+            return
+            
         self.is_restoring = True
         
         if hasattr(ctx, 'main_window') and hasattr(ctx.main_window, 'gl_widget'):
@@ -64,21 +81,30 @@ class ProjectController:
         self.is_restoring = False
 
     def undo(self) -> None:
-        if not self.undo_stack: return
+        """Reverts the scene to the previous recorded snapshot."""
+        if not self.undo_stack: 
+            return
         self.redo_stack.append(ctx.engine.get_scene_snapshot())
         self.restore_snapshot(self.undo_stack.pop())
 
     def redo(self) -> None:
-        if not self.redo_stack: return
+        """Advances the scene to the next recorded snapshot."""
+        if not self.redo_stack: 
+            return
         self.undo_stack.append(ctx.engine.get_scene_snapshot())
         self.restore_snapshot(self.redo_stack.pop())
 
     @safe_execute(context="New Project")
     def new_project(self) -> None:
-        ans = QMessageBox.question(ctx.main_window, "New Project", 
-                                   "Creating a new project will clear the current scene. Continue?", 
-                                   QMessageBox.Yes | QMessageBox.No)
-        if ans == QMessageBox.No: return
+        """Purges the current scene and resets the application to an empty workspace."""
+        ans = QMessageBox.question(
+            ctx.main_window, "New Project", 
+            "Creating a new project will clear the current scene. Continue?", 
+            QMessageBox.Yes | QMessageBox.No
+        )
+        
+        if ans == QMessageBox.No: 
+            return
         
         if hasattr(ctx, 'main_window') and hasattr(ctx.main_window, 'gl_widget'):
             ctx.main_window.gl_widget.makeCurrent()
@@ -104,18 +130,24 @@ class ProjectController:
 
     @safe_execute(context="Save Project")
     def save_project(self) -> None:
+        """Serializes the active scene graph, dependencies, and metadata to a JSON file."""
         name = self.current_project_name
         if not name:
             name, ok = QInputDialog.getText(ctx.main_window, "Save Project", "Enter Project Name:")
-            if not ok or not name.strip(): return
+            if not ok or not name.strip(): 
+                return
+                
             name = "".join([c for c in name.strip() if c.isalnum() or c in (' ', '-', '_')])
-            
             file_path = os.path.join(self.projects_dir, f"{name}.json")
+            
             if os.path.exists(file_path):
-                ans = QMessageBox.question(ctx.main_window, "Confirm Overwrite", 
-                                           "This project already exists. Overwrite?", 
-                                           QMessageBox.Yes | QMessageBox.No)
-                if ans == QMessageBox.No: return
+                ans = QMessageBox.question(
+                    ctx.main_window, "Confirm Overwrite", 
+                    "This project already exists. Overwrite?", 
+                    QMessageBox.Yes | QMessageBox.No
+                )
+                if ans == QMessageBox.No: 
+                    return
         else:
             file_path = os.path.join(self.projects_dir, f"{name}.json")
         
@@ -123,6 +155,7 @@ class ProjectController:
             "render_mode": ctx.main_window.cmb_render.currentIndex() if hasattr(ctx.main_window, 'cmb_render') else 1,
             "wireframe": ctx.main_window.chk_wire.isChecked() if hasattr(ctx.main_window, 'chk_wire') else False
         }
+        
         if hasattr(ctx, 'main_window') and hasattr(ctx.main_window, 'gl_widget'):
             bg = ctx.main_window.gl_widget.bg_color
             metadata["bg_color"] = [bg[0], bg[1], bg[2]]
@@ -136,10 +169,10 @@ class ProjectController:
 
     @safe_execute(context="Load Project")
     def load_project(self) -> None:
+        """Deserializes a selected JSON project file and rebuilds the scene graph and resources."""
         dialog = ProjectBrowserDialog(ctx.main_window, self.projects_dir)
         if dialog.exec() == QDialog.Accepted and dialog.selected_path:
             selected_path = dialog.selected_path
-            
             QApplication.processEvents()
             
             progress = QProgressDialog("Loading Project and Assets...", None, 0, 0, ctx.main_window)
@@ -147,7 +180,7 @@ class ProjectController:
             progress.setWindowModality(Qt.WindowModal)
             progress.setMinimumDuration(0)
             
-            # Keep this dialog text-only to avoid a misleading determinate progress bar.
+            # Keep dialog text-only to prevent misleading determinate progress bar
             bar = progress.findChild(QProgressBar)
             if bar:
                 bar.hide()
@@ -160,7 +193,6 @@ class ProjectController:
                 if hasattr(ctx, 'main_window') and hasattr(ctx.main_window, 'gl_widget'):
                     ctx.main_window.gl_widget.makeCurrent()
                     current_aspect = ctx.main_window.gl_widget.width() / max(ctx.main_window.gl_widget.height(), 1)
-                    # Load with current viewport aspect ratio so restored cameras remain consistent.
                     metadata = ctx.engine.load_project(selected_path, current_aspect)
                     ctx.main_window.gl_widget.doneCurrent()
                 else:
@@ -194,15 +226,21 @@ class ProjectController:
 
     @safe_execute(context="Export OBJ")
     def export_obj(self) -> None:
+        """Delegates the extraction of scene geometry to external OBJ/MTL formats."""
         parent_dir = QFileDialog.getExistingDirectory(ctx.main_window, "Select Export Directory")
-        if not parent_dir: return
+        if not parent_dir: 
+            return
         
         folder_name, ok = QInputDialog.getText(ctx.main_window, "Export Folder Name", "Folder name:", text=config.DEFAULT_EXPORT_FOLDER)
-        if not ok or not folder_name.strip(): return
+        if not ok or not folder_name.strip(): 
+            return
         
         safe_folder_name = "".join([c for c in folder_name.strip() if c.isalnum() or c in (' ', '-', '_')])
         export_dir = os.path.join(parent_dir, safe_folder_name)
         os.makedirs(export_dir, exist_ok=True)
 
         ctx.engine.export_scene_obj(export_dir)
-        QMessageBox.information(ctx.main_window, "Success", f"Scene exported successfully to:\n{export_dir}\n(Includes .obj and .mtl)")
+        QMessageBox.information(
+            ctx.main_window, "Success", 
+            f"Scene exported successfully to:\n{export_dir}\n(Includes .obj and .mtl)"
+        )

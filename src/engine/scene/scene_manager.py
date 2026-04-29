@@ -1,3 +1,9 @@
+"""
+Scene Manager Facade.
+Provides a unified API for interacting with the Scene, routing complex operations
+to specialized sub-managers (Hierarchy, Serialization, Clipboard).
+"""
+
 import math
 import glm
 from typing import Dict, List, Any, Optional, Tuple
@@ -8,13 +14,11 @@ from src.engine.scene.components import TransformComponent, MeshRenderer, LightC
 from src.engine.scene.managers.serialization_manager import SerializationManager
 from src.engine.scene.managers.hierarchy_manager import HierarchyManager
 from src.engine.scene.managers.clipboard_manager import ClipboardManager
-
 from src.app.exceptions import SimulationError
-
 
 class SceneManager:
     """
-    High-level facade for scene logic and specialized sub-managers.
+    High-level facade orchestrating state modifications requested by the UI Controllers.
     """
 
     _COMPONENT_MAP = {
@@ -31,6 +35,7 @@ class SceneManager:
         self.clipboard = ClipboardManager(self.scene, self)
 
     def _add_entity_recursive(self, ent: Entity) -> None:
+        """Recursively registers a cloned or loaded hierarchy into the Scene."""
         self.scene.add_entity(ent)
         for child in ent.children:
             self._add_entity_recursive(child)
@@ -45,6 +50,7 @@ class SceneManager:
         self.scene.manipulation_mode = mode
 
     def get_scene_entities_list(self) -> List[Dict[str, Any]]:
+        """Extracts a flat list of entities for UI TreeWidget population."""
         return [
             {
                 "id": i,
@@ -56,6 +62,7 @@ class SceneManager:
         ]
 
     def reset_entity_transform(self, index: int) -> None:
+        """Resets position, rotation, and scale to identity."""
         if index < 0 or index >= len(self.scene.entities):
             return
         tf = self.scene.entities[index].get_component(TransformComponent)
@@ -67,13 +74,12 @@ class SceneManager:
             tf.sync_from_gui()
 
     def update_light_direction(self, yaw: float, pitch: float) -> None:
+        """Updates the rotation of directional or spot lights using spherical coordinates."""
         if self.scene.selected_index < 0:
             return
         tf = self.scene.entities[self.scene.selected_index].get_component(TransformComponent)
         if tf:
-            world_quat = glm.angleAxis(glm.radians(yaw), glm.vec3(0, 1, 0)) * glm.angleAxis(
-                glm.radians(pitch), glm.vec3(1, 0, 0)
-            )
+            world_quat = glm.angleAxis(glm.radians(yaw), glm.vec3(0, 1, 0)) * glm.angleAxis(glm.radians(pitch), glm.vec3(1, 0, 0))
             if tf.entity and tf.entity.parent:
                 parent_tf = tf.entity.parent.get_component(TransformComponent)
                 if parent_tf:
@@ -82,10 +88,12 @@ class SceneManager:
                     tf.quat_rot = world_quat
             else:
                 tf.quat_rot = world_quat
+                
             tf.rotation = glm.degrees(glm.eulerAngles(tf.quat_rot))
             tf.sync_from_gui()
 
     def set_active_camera_selected(self) -> None:
+        """Swaps the rendering context to use the currently selected Camera entity."""
         if self.scene.selected_index < 0:
             return
         ent = self.scene.entities[self.scene.selected_index]
@@ -98,12 +106,14 @@ class SceneManager:
                     m = e.get_component(MeshRenderer)
                     if m:
                         m.visible = True
+                        
             target_cam.is_active = True
             m_target = ent.get_component(MeshRenderer)
             if m_target:
                 m_target.visible = False
 
     def get_selected_transform_state(self) -> Optional[Tuple[str, Tuple[float, float, float]]]:
+        """Returns the specific transform axis values mapped to the active Gizmo mode."""
         if self.scene.selected_index < 0:
             return None
         tf = self.scene.entities[self.scene.selected_index].get_component(TransformComponent)
@@ -115,10 +125,12 @@ class SceneManager:
         return (mode, (val.x, val.y, val.z))
 
     def clear_scene(self) -> None:
+        """Flushes all entities and project manifests."""
         self.scene.clear_entities()
         ResourceManager.clear_project_assets()
 
     def get_selected_entity_data(self) -> Optional[Dict[str, Any]]:
+        """Bundles the active state of all components attached to the selected entity for the Inspector UI."""
         idx = self.scene.selected_index
         if idx < 0 or idx >= len(self.scene.entities):
             return None
@@ -150,6 +162,7 @@ class SceneManager:
         return data
 
     def set_component_property(self, comp_name: str, prop: str, value: Any) -> None:
+        """Mutates a specific field inside a specific component."""
         if self.scene.selected_index < 0:
             return
 
@@ -176,6 +189,7 @@ class SceneManager:
             setattr(comp, prop, glm.vec3(*value) if isinstance(value, list) and len(value) == 3 else value)
 
     def toggle_visibility_selected(self) -> None:
+        """Toggles the visible state of the selected renderable."""
         if self.scene.selected_index >= 0:
             ent = self.scene.entities[self.scene.selected_index]
             light = ent.get_component(LightComponent)
@@ -186,18 +200,21 @@ class SceneManager:
                 mesh.visible = not mesh.visible
 
     def toggle_all_lights(self, is_on: bool) -> None:
+        """Global override for lighting system execution."""
         for ent in self.scene.entities:
             light = ent.get_component(LightComponent)
             if light:
                 light.on = is_on
 
     def toggle_all_proxies(self, is_visible: bool) -> None:
+        """Global override for the visibility of editor utility meshes."""
         for ent in self.scene.entities:
             mesh = ent.get_component(MeshRenderer)
             if mesh and getattr(mesh, "is_proxy", False):
                 mesh.visible = is_visible
 
     def load_texture_to_selected(self, map_attr: str, filepath: str) -> None:
+        """Binds a texture to a specific material map slot on the selected entity."""
         if self.scene.selected_index < 0:
             raise SimulationError("Please select an entity in the scene first!")
 
@@ -210,6 +227,7 @@ class SceneManager:
             mesh.material.tex_paths[map_attr] = filepath
 
     def remove_texture_from_selected(self, map_attr: str) -> None:
+        """Unbinds a texture from a specific material map slot."""
         if self.scene.selected_index < 0:
             return
 
@@ -220,6 +238,7 @@ class SceneManager:
                 del mesh.material.tex_paths[map_attr]
 
     def is_texture_in_use(self, path: str) -> bool:
+        """Scans the active scene graph to check if a specific texture path is utilized."""
         for ent in self.scene.entities:
             if self._check_texture_usage(ent, path):
                 return True
@@ -234,6 +253,7 @@ class SceneManager:
                 return True
         return False
 
+    # --- Sub-Manager Delegations ---
     def get_scene_snapshot(self) -> str:
         return self.serializer.get_scene_snapshot()
 
@@ -272,4 +292,3 @@ class SceneManager:
 
     def delete_selected(self) -> None:
         self.clipboard.delete_selected()
-

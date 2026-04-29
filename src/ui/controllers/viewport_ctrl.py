@@ -1,14 +1,22 @@
+"""
+Viewport Interaction Controller.
+Handles translation of physical Mouse/Keyboard input events into 3D space interactions 
+such as raycast picking, gizmo dragging, and camera flight.
+"""
+
 import time
 from typing import Optional, Set, Tuple
 from PySide6.QtCore import Qt
+
 from src.ui.views.viewport.main_viewport import MainViewportView
 from src.app import ctx, AppEvent, config
 from src.ui.error_handler import safe_execute
 
 class ViewportController:
-    """Handles mouse and keyboard interactions within the 3D viewport space."""
+    """Translates 2D viewport coordinates and keystrokes into spatial engine commands."""
+    
     def __init__(self, is_hud: bool = False) -> None:
-        self.is_hud = is_hud
+        self.is_hud: bool = is_hud
         
         if not self.is_hud:
             self.view = MainViewportView(controller=self)
@@ -30,6 +38,7 @@ class ViewportController:
 
     @safe_execute(context="Viewport Click Interaction")
     def process_press(self, x: int, y: int, button: Qt.MouseButton, width: int, height: int) -> None:
+        """Evaluates initial click events for raycasting and gizmo binding."""
         self.last_pos = (x, y)
         self._drag_history_recorded = False
         
@@ -53,6 +62,7 @@ class ViewportController:
 
     @safe_execute(context="Viewport Drag Interaction")
     def process_move(self, x: int, y: int, buttons: Qt.MouseButtons, width: int, height: int) -> None:
+        """Processes continuous cursor movement for camera panning, orbiting, or gizmo dragging."""
         if self.last_pos is None:
             self.last_pos = (x, y)
             dx = dy = 0
@@ -109,6 +119,7 @@ class ViewportController:
             ctx.events.emit(AppEvent.SCENE_CHANGED)
 
     def process_release(self, button: Qt.MouseButton) -> None:
+        """Finalizes a mouse interaction sequence."""
         self._drag_history_recorded = False
         if button == Qt.LeftButton:
             self.active_axis = None
@@ -116,24 +127,33 @@ class ViewportController:
             ctx.events.emit(AppEvent.ENTITY_SELECTED, curr_id)
 
     def process_key_press(self, key: Qt.Key) -> None: 
-        if key in self.keymap: self.active_commands.add(self.keymap[key])
+        if key in self.keymap: 
+            self.active_commands.add(self.keymap[key])
         
     def process_key_release(self, key: Qt.Key) -> None: 
-        if key in self.keymap and self.keymap[key] in self.active_commands: self.active_commands.remove(self.keymap[key])
+        if key in self.keymap and self.keymap[key] in self.active_commands: 
+            self.active_commands.remove(self.keymap[key])
         
     def clear_keys(self) -> None: 
         self.active_commands.clear()
         
     def process_continuous_input(self) -> bool:
-        if self.is_hud: return False
+        """Processes sustained key presses mapped to continuous camera movement via Delta Time."""
+        if self.is_hud: 
+            return False
+            
         current_time = time.perf_counter()
         dt = current_time - self.last_time
         self.last_time = current_time
         
-        # Prevent physics/movement tunneling by locking maximum delta time
-        if dt > 0.1: dt = 1.0 / config.TARGET_FPS
-        if not self.active_commands: return False
+        # Prevent physics/movement tunneling by locking maximum delta time limits
+        if dt > 0.1: 
+            dt = 1.0 / config.TARGET_FPS
+            
+        if not self.active_commands: 
+            return False
             
         if ctx.engine.update_camera_movement(list(self.active_commands), dt):
             return True
+            
         return False
